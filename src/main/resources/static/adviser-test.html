@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Adviser Assignment Test</title>
+</head>
+<body>
+<h2>Assign Adviser</h2>
+
+<label>Group ID:</label>
+<input id="groupId" value="1"><br><br>
+
+<label>Adviser ID:</label>
+<input id="adviserId" value="1"><br><br>
+
+<button onclick="assign()">Assign Adviser</button>
+<button onclick="claim()">Claim Group</button>
+
+<p id="result"></p>
+
+<script>
+function assign() {
+  fetch(`http://localhost:8080/api/groups/${groupId.value}/assign-adviser?adviserId=${adviserId.value}`, {
+    method: "POST"
+  })
+  .then(res => res.text())
+  .then(data => result.innerText = data)
+  .catch(err => result.innerText = err);
+}
+
+function claim() {
+  fetch(`http://localhost:8080/api/groups/${groupId.value}/claim?adviserId=${adviserId.value}`, {
+    method: "POST"
+  })
+  .then(res => res.text())
+  .then(data => result.innerText = data)
+  .catch(err => result.innerText = err);
+}
+</script>
+</body>
+</html>
