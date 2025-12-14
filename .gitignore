@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local DB credentials (keep out of VCS)
+/db-credentials.properties
