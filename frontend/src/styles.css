@@ -1,0 +1,5 @@
+body { font-family: Arial, Helvetica, sans-serif; padding: 2rem }
+.page { max-width: 680px }
+label { display:block; margin-top: 1rem }
+input[type=file], input[type=number] { display:block; margin-top: .25rem }
+.result { white-space: pre-wrap; background:#f6f8fa; padding:1rem; margin-top:1rem; border:1px solid #ddd }

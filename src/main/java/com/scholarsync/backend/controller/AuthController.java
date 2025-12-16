@@ -3,15 +3,18 @@ package com.scholarsync.backend.controller;
 import com.scholarsync.backend.model.User;
 import com.scholarsync.backend.service.MicrosoftGraphService;
 import com.scholarsync.backend.service.UserService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
@@ -24,17 +27,17 @@ import jakarta.servlet.http.HttpSession;
 
 @RestController
 @RequestMapping("/api/auth")
-@RequiredArgsConstructor
 public class AuthController {
 
     private final UserService userService;
+    private final String professorKey;
 
     @GetMapping("/success")
     public ResponseEntity<Map<String, Object>> authSuccess(
             @AuthenticationPrincipal OAuth2User oauth2User,
             HttpServletRequest request) {
         Map<String, Object> response = new HashMap<>();
-        
+
         // First, check if user was already saved by OAuth2LoginSuccessHandler
         // Check session first (for redirects), then request attributes (for forwards)
         HttpSession session = request.getSession(false);
@@ -45,11 +48,11 @@ public class AuthController {
         if (savedUser == null) {
             savedUser = (User) request.getAttribute("savedUser");
         }
-        
+
         if (savedUser != null) {
             // User was successfully created/updated by OAuth2LoginSuccessHandler
             response.put("success", true);
-            
+
             // Check if this was a new registration or existing login
             Boolean isNewUser = null;
             if (session != null) {
@@ -65,9 +68,9 @@ public class AuthController {
                 response.put("message", "Signed in successfully");
                 response.put("isNewUser", false);
             }
-            
+
             // authenticationMethod is handled via OAuth flow only
-            
+
             // User info from database
             Map<String, Object> userInfo = new HashMap<>();
             userInfo.put("id", savedUser.getId());
@@ -78,9 +81,9 @@ public class AuthController {
             userInfo.put("microsoftId", savedUser.getMicrosoftId());
             userInfo.put("accountCreatedAt", savedUser.getAccountCreatedAt());
             userInfo.put("lastLoginAt", savedUser.getLastLoginAt());
-            
+
             response.put("user", userInfo);
-            
+
             // Microsoft Graph API fetched info (if available from session or request)
             MicrosoftGraphService.UserProfile microsoftProfile = null;
             if (session != null) {
@@ -89,7 +92,7 @@ public class AuthController {
             if (microsoftProfile == null) {
                 microsoftProfile = (MicrosoftGraphService.UserProfile) request.getAttribute("microsoftProfile");
             }
-            
+
             if (microsoftProfile != null) {
                 Map<String, Object> microsoftInfo = new HashMap<>();
                 microsoftInfo.put("id", microsoftProfile.getId());
@@ -99,30 +102,30 @@ public class AuthController {
                 microsoftInfo.put("jobTitle", microsoftProfile.getJobTitle());
                 response.put("microsoftProfile", microsoftInfo);
             }
-            
+
             // Clean up session attributes after reading
             if (session != null) {
                 session.removeAttribute("microsoftProfile");
                 session.removeAttribute("savedUser");
                 session.removeAttribute("isNewUser");
             }
-            
+
             return ResponseEntity.ok(response);
         }
-        
+
         // Fallback: If savedUser is not in request, try to look up by email
         if (oauth2User != null) {
             String email = oauth2User.getAttribute("email");
             if (email == null) {
                 email = oauth2User.getAttribute("userPrincipalName");
             }
-            
+
             Optional<User> user = userService.findByEmail(email);
-            
+
             if (user.isPresent()) {
                 User userEntity = user.get();
                 response.put("success", true);
-                
+
                 // Check if this was a new registration or existing login
                 Boolean isNewUser = (Boolean) request.getAttribute("isNewUser");
                 if (isNewUser != null && isNewUser) {
@@ -132,7 +135,7 @@ public class AuthController {
                     response.put("message", "Signed in successfully");
                     response.put("isNewUser", false);
                 }
-                
+
                 // User info from database
                 Map<String, Object> userInfo = new HashMap<>();
                 userInfo.put("id", userEntity.getId());
@@ -143,13 +146,13 @@ public class AuthController {
                 userInfo.put("microsoftId", userEntity.getMicrosoftId());
                 userInfo.put("accountCreatedAt", userEntity.getAccountCreatedAt());
                 userInfo.put("lastLoginAt", userEntity.getLastLoginAt());
-                
+
                 response.put("user", userInfo);
-                
+
                 // Microsoft Graph API fetched info (if available from request)
-                MicrosoftGraphService.UserProfile microsoftProfile = 
+                MicrosoftGraphService.UserProfile microsoftProfile =
                     (MicrosoftGraphService.UserProfile) request.getAttribute("microsoftProfile");
-                
+
                 if (microsoftProfile != null) {
                     Map<String, Object> microsoftInfo = new HashMap<>();
                     microsoftInfo.put("id", microsoftProfile.getId());
@@ -164,7 +167,7 @@ public class AuthController {
                 // This handles cases where Microsoft Graph API call failed in OAuth2LoginSuccessHandler
                 String microsoftId = oauth2User.getAttribute("oid"); // Microsoft Object ID
                 String displayName = oauth2User.getAttribute("name");
-                
+
                 // Extract institutional ID from given_name (e.g., "22-0369-330 Giles Anthony" -> "22-0369-330")
                 // OAuth2User doesn't have jobTitle, but institutional ID is in given_name
                 String givenName = oauth2User.getAttribute("given_name");
@@ -180,12 +183,12 @@ public class AuthController {
                         institutionalId = matcher.group(1);
                     }
                 }
-                
+
                 // Fallback: try jobTitle attribute if given_name extraction failed
                 if (institutionalId == null) {
                     institutionalId = oauth2User.getAttribute("jobTitle");
                 }
-                
+
                 if (microsoftId != null && email != null) {
                     // Try to create user from OAuth2User attributes
                     try {
@@ -195,11 +198,11 @@ public class AuthController {
                             displayName,
                             institutionalId
                         );
-                        
+
                         response.put("success", true);
                         response.put("message", "Account created and signed in successfully (fallback)");
                         response.put("isNewUser", true);
-                        
+
                         Map<String, Object> userInfo = new HashMap<>();
                         userInfo.put("id", fallbackUser.getId());
                         userInfo.put("email", fallbackUser.getEmail());
@@ -209,16 +212,16 @@ public class AuthController {
                         userInfo.put("microsoftId", fallbackUser.getMicrosoftId());
                         userInfo.put("accountCreatedAt", fallbackUser.getAccountCreatedAt());
                         userInfo.put("lastLoginAt", fallbackUser.getLastLoginAt());
-                        
+
                         response.put("user", userInfo);
-                        
+
                         // Include OAuth2 user details
                         Map<String, Object> oauth2Info = new HashMap<>();
                         oauth2Info.put("name", oauth2User.getName());
                         oauth2Info.put("email", email);
                         oauth2Info.put("attributes", oauth2User.getAttributes());
                         response.put("oauth2User", oauth2Info);
-                        
+
                         return ResponseEntity.ok(response);
                     } catch (Exception e) {
                         // If creation fails, return error with details
@@ -230,14 +233,14 @@ public class AuthController {
                     response.put("success", false);
                     response.put("message", "User not found in database and missing required OAuth2 attributes");
                 }
-                
+
                 // Include OAuth2 user details for debugging
                 Map<String, Object> oauth2Info = new HashMap<>();
                 oauth2Info.put("name", oauth2User.getName());
                 oauth2Info.put("email", email);
                 oauth2Info.put("attributes", oauth2User.getAttributes());
                 response.put("oauth2User", oauth2Info);
-                
+
                 // Include Microsoft Graph profile if available from session or request
                 MicrosoftGraphService.UserProfile microsoftProfile = null;
                 if (session != null) {
@@ -246,7 +249,7 @@ public class AuthController {
                 if (microsoftProfile == null) {
                     microsoftProfile = (MicrosoftGraphService.UserProfile) request.getAttribute("microsoftProfile");
                 }
-                
+
                 if (microsoftProfile != null) {
                     Map<String, Object> microsoftInfo = new HashMap<>();
                     microsoftInfo.put("id", microsoftProfile.getId());
@@ -261,7 +264,7 @@ public class AuthController {
             response.put("success", false);
             response.put("message", "Not authenticated");
         }
-        
+
         return ResponseEntity.ok(response);
     }
 
@@ -277,7 +280,7 @@ public class AuthController {
         }
 
         Optional<User> user = userService.findByEmail(email);
-        
+
         if (user.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "User not found"));
         }
@@ -328,5 +331,28 @@ public class AuthController {
             .header(HttpHeaders.SET_COOKIE, deleteSessionCookie.toString())
             .body(body);
     }
-}
 
+    /**
+     * Professor key check endpoint for frontend validation.
+     * 
+     * GET /api/auth/professor/check
+     * Header: X-Professor-Key: <key>
+     */
+    @CrossOrigin(origins = "http://localhost:5173")
+    @GetMapping("/professor/check")
+    public ResponseEntity<?> checkProfessor(@RequestHeader(value = "X-Professor-Key", required = false) String key) {
+        if (professorKey == null || professorKey.isEmpty()) {
+            // Feature disabled on server
+            return ResponseEntity.ok().body("ok");
+        }
+        if (key != null && key.equals(professorKey)) {
+            return ResponseEntity.ok().body("ok");
+        }
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Forbidden");
+    }
+
+    public AuthController(UserService userService, @Value("${app.professor.key:}") String professorKey) {
+        this.userService = userService;
+        this.professorKey = (professorKey == null || professorKey.isEmpty()) ? "" : professorKey;
+    }
+}
