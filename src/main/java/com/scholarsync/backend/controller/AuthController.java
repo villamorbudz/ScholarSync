@@ -4,16 +4,23 @@ import com.scholarsync.backend.model.User;
 import com.scholarsync.backend.service.MicrosoftGraphService;
 import com.scholarsync.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -25,12 +32,12 @@ public class AuthController {
     @GetMapping("/success")
     public ResponseEntity<Map<String, Object>> authSuccess(
             @AuthenticationPrincipal OAuth2User oauth2User,
-            jakarta.servlet.http.HttpServletRequest request) {
+            HttpServletRequest request) {
         Map<String, Object> response = new HashMap<>();
         
         // First, check if user was already saved by OAuth2LoginSuccessHandler
         // Check session first (for redirects), then request attributes (for forwards)
-        jakarta.servlet.http.HttpSession session = request.getSession(false);
+        HttpSession session = request.getSession(false);
         User savedUser = null;
         if (session != null) {
             savedUser = (User) session.getAttribute("savedUser");
@@ -67,9 +74,8 @@ public class AuthController {
             userInfo.put("email", savedUser.getEmail());
             userInfo.put("displayName", savedUser.getDisplayName());
             userInfo.put("role", savedUser.getRole());
-            userInfo.put("jobTitle", savedUser.getJobTitle());
+            userInfo.put("institutionalId", savedUser.getInstitutionalId());
             userInfo.put("microsoftId", savedUser.getMicrosoftId());
-            userInfo.put("emailVerified", savedUser.getEmailVerified());
             userInfo.put("accountCreatedAt", savedUser.getAccountCreatedAt());
             userInfo.put("lastLoginAt", savedUser.getLastLoginAt());
             
@@ -133,9 +139,8 @@ public class AuthController {
                 userInfo.put("email", userEntity.getEmail());
                 userInfo.put("displayName", userEntity.getDisplayName());
                 userInfo.put("role", userEntity.getRole());
-                userInfo.put("jobTitle", userEntity.getJobTitle());
+                userInfo.put("institutionalId", userEntity.getInstitutionalId());
                 userInfo.put("microsoftId", userEntity.getMicrosoftId());
-                userInfo.put("emailVerified", userEntity.getEmailVerified());
                 userInfo.put("accountCreatedAt", userEntity.getAccountCreatedAt());
                 userInfo.put("lastLoginAt", userEntity.getLastLoginAt());
                 
@@ -163,22 +168,22 @@ public class AuthController {
                 // Extract institutional ID from given_name (e.g., "22-0369-330 Giles Anthony" -> "22-0369-330")
                 // OAuth2User doesn't have jobTitle, but institutional ID is in given_name
                 String givenName = oauth2User.getAttribute("given_name");
-                String jobTitle = null;
+                String institutionalId = null;
                 if (givenName != null && !givenName.isEmpty()) {
                     // Extract the institutional ID pattern from given_name
-                    // Pattern: "22-0369-330 Giles Anthony" or "2010-12345 Name" or "1-1234 Name"
+                    // Pattern: "22-0369-330 Giles Anthony" or "2010-12345 Name" or "1643 Name"
                     java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-                        "(\\d{2}-\\d{4}-\\d{3}|\\d{4}-\\d{5}|1-\\d{4})"
+                        "^(\\d{2}-\\d{4}-\\d{3}|\\d{4}-\\d{5}|\\d{1,4})\\b"
                     );
                     java.util.regex.Matcher matcher = pattern.matcher(givenName);
                     if (matcher.find()) {
-                        jobTitle = matcher.group(1);
+                        institutionalId = matcher.group(1);
                     }
                 }
                 
                 // Fallback: try jobTitle attribute if given_name extraction failed
-                if (jobTitle == null) {
-                    jobTitle = oauth2User.getAttribute("jobTitle");
+                if (institutionalId == null) {
+                    institutionalId = oauth2User.getAttribute("jobTitle");
                 }
                 
                 if (microsoftId != null && email != null) {
@@ -188,8 +193,7 @@ public class AuthController {
                             microsoftId,
                             email,
                             displayName,
-                            jobTitle,
-                            true // Microsoft accounts are verified
+                            institutionalId
                         );
                         
                         response.put("success", true);
@@ -201,9 +205,8 @@ public class AuthController {
                         userInfo.put("email", fallbackUser.getEmail());
                         userInfo.put("displayName", fallbackUser.getDisplayName());
                         userInfo.put("role", fallbackUser.getRole());
-                        userInfo.put("jobTitle", fallbackUser.getJobTitle());
+                        userInfo.put("institutionalId", fallbackUser.getInstitutionalId());
                         userInfo.put("microsoftId", fallbackUser.getMicrosoftId());
-                        userInfo.put("emailVerified", fallbackUser.getEmailVerified());
                         userInfo.put("accountCreatedAt", fallbackUser.getAccountCreatedAt());
                         userInfo.put("lastLoginAt", fallbackUser.getLastLoginAt());
                         
@@ -285,11 +288,45 @@ public class AuthController {
             "email", userEntity.getEmail(),
             "displayName", userEntity.getDisplayName(),
             "role", userEntity.getRole(),
-            "jobTitle", userEntity.getJobTitle()
+            "institutionalId", userEntity.getInstitutionalId()
         );
 
         return ResponseEntity.ok(userInfo);
     }
-}
 
+    /**
+     * Logout endpoint for the currently authenticated Microsoft user.
+     *
+     * This will:
+     * - Invalidate the current HTTP session (removing the Spring Security context)
+     * - Clear the JSESSIONID cookie on the client
+     *
+     * Frontend can call: POST /api/auth/logout with the existing JSESSIONID cookie.
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Map<String, Object>> logout(HttpServletRequest request,
+                                                      HttpServletResponse response) {
+        // Invalidate session if it exists
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
+
+        // Clear JSESSIONID cookie on the client
+        ResponseCookie deleteSessionCookie = ResponseCookie.from("JSESSIONID", "")
+            .path("/")
+            .maxAge(0)
+            .httpOnly(true)
+            .build();
+
+        Map<String, Object> body = Map.of(
+            "success", true,
+            "message", "Logged out successfully"
+        );
+
+        return ResponseEntity.ok()
+            .header(HttpHeaders.SET_COOKIE, deleteSessionCookie.toString())
+            .body(body);
+    }
+}
 

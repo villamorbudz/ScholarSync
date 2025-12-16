@@ -25,13 +25,10 @@ public class UserService {
      * IMPORTANT: Registration is ONLY possible via Microsoft OAuth. There is no local registration.
      * This method is called when user authenticates via OAuth (either new registration or existing login).
      * 
-     * For local password login (fallback when MS OAuth is down), use authenticateWithLocalPassword()
-     * 
      * @param microsoftId Microsoft user ID
      * @param email User email
      * @param displayName User display name
-     * @param jobTitle User job title (institutional ID)
-     * @param emailVerified Whether email is verified
+     * @param institutionalId User institutional ID (from Microsoft jobTitle field)
      * @return Created or updated User entity
      */
     @Transactional
@@ -39,28 +36,24 @@ public class UserService {
             String microsoftId,
             String email,
             String displayName,
-            String jobTitle,
-            Boolean emailVerified) {
+            String institutionalId) {
         
         Optional<User> existingUser = userRepository.findByMicrosoftId(microsoftId);
         boolean isNewUser = existingUser.isEmpty();
         
         if (isNewUser) {
             // NEW USER: Auto-register via OAuth (registration only possible via OAuth)
-            Role role = roleDeterminationService.determineRole(jobTitle);
+            Role role = roleDeterminationService.determineRole(institutionalId);
             
             User newUser = User.builder()
                     .microsoftId(microsoftId)
                     .email(email)
                     .displayName(displayName)
-                    .jobTitle(jobTitle)
+                    .institutionalId(institutionalId)
                     .role(role)
-                    // AuthenticationMethod will be stored in JWT token/session during login
                     .accountCreatedAt(LocalDateTime.now())
                     .lastLoginAt(LocalDateTime.now())
-                    .lastOAuthSyncAt(LocalDateTime.now())
                     .isActive(true)
-                    .emailVerified(emailVerified != null ? emailVerified : false)
                     .build();
             
             return userRepository.save(newUser);
@@ -68,16 +61,11 @@ public class UserService {
             // EXISTING USER: Update and sign in via OAuth
             User user = existingUser.get();
             user.setDisplayName(displayName);
-            user.setJobTitle(jobTitle);
-            user.setEmailVerified(emailVerified);
+            user.setInstitutionalId(institutionalId);
             user.setLastLoginAt(LocalDateTime.now());
-            user.setLastOAuthSyncAt(LocalDateTime.now());
             
-            // Note: AuthenticationMethod will be stored in JWT token/session during login
-            // It tracks how the user logged in THIS session, not stored in database
-            
-            // Re-evaluate role if jobTitle changed
-            Role newRole = roleDeterminationService.determineRole(jobTitle);
+            // Re-evaluate role if institutionalId changed
+            Role newRole = roleDeterminationService.determineRole(institutionalId);
             if (!user.getRole().equals(newRole)) {
                 user.setRole(newRole);
             }

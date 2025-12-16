@@ -22,8 +22,11 @@ public class MicrosoftGraphService {
     /**
      * Fetches user profile from Microsoft Graph API including jobTitle
      * 
+     * Note: Microsoft stores institutional IDs in the jobTitle field.
+     * This is mapped to institutionalId in our User entity.
+     * 
      * @param accessToken OAuth access token
-     * @return UserProfile with id, displayName, mail, userPrincipalName, and jobTitle
+     * @return UserProfile with id, displayName, mail, userPrincipalName, and jobTitle (institutional ID)
      */
     public Mono<UserProfile> getUserProfile(String accessToken) {
         return webClient.get()
@@ -48,6 +51,11 @@ public class MicrosoftGraphService {
         @JsonProperty("userPrincipalName")
         private String userPrincipalName;
 
+        /**
+         * Microsoft Graph API field name: "jobTitle"
+         * Content: Institutional ID (e.g., "22-1234-567", "1-1234")
+         * Mapped to: User.institutionalId in our database
+         */
         @JsonProperty("jobTitle")
         private String jobTitle;
     }

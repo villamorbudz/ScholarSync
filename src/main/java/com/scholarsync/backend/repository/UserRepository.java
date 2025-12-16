@@ -13,8 +13,10 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByMicrosoftId(String microsoftId);
     Optional<User> findByEmail(String email);
+    Optional<User> findByInstitutionalId(String institutionalId);
     boolean existsByMicrosoftId(String microsoftId);
     boolean existsByEmail(String email);
+    boolean existsByInstitutionalId(String institutionalId);
     
     // Find users by role (useful for filtering students, teachers, etc.)
     List<User> findByRole(Role role);

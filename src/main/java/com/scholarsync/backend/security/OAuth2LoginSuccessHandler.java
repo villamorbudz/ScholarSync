@@ -6,8 +6,10 @@ import com.scholarsync.backend.service.UserService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
@@ -19,18 +21,32 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
     private final OAuth2AuthorizedClientService authorizedClientService;
     private final MicrosoftGraphService microsoftGraphService;
     private final UserService userService;
+    private final JwtService jwtService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Value("${jwt.expiration:1800000}")
+    private long jwtExpirationMillis;
+
+    public OAuth2LoginSuccessHandler(OAuth2AuthorizedClientService authorizedClientService,
+                                    MicrosoftGraphService microsoftGraphService,
+                                    UserService userService,
+                                    JwtService jwtService) {
+        this.authorizedClientService = authorizedClientService;
+        this.microsoftGraphService = microsoftGraphService;
+        this.userService = userService;
+        this.jwtService = jwtService;
+    }
 
     @Override
     public void onAuthenticationSuccess(
@@ -73,9 +89,18 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
             // Extract user information
             String microsoftId = userProfile.getId();
             String email = userProfile.getMail() != null ? userProfile.getMail() : userProfile.getUserPrincipalName();
+
+            // Enforce domain restriction: only @cit.edu users may authenticate
+            if (email == null || !email.toLowerCase().endsWith("@cit.edu")) {
+                log.warn("Blocked login attempt for non-cit.edu email: {}", email);
+                sendErrorResponse(response, HttpServletResponse.SC_FORBIDDEN,
+                        "Access denied",
+                        "Only @cit.edu accounts are allowed to access this system.",
+                        userProfile, oauth2User);
+                return;
+            }
             String displayName = userProfile.getDisplayName();
-            String jobTitle = userProfile.getJobTitle();
-            Boolean emailVerified = true; // Microsoft accounts are verified
+            String institutionalId = userProfile.getJobTitle(); // Microsoft stores institutional ID in jobTitle field
 
             log.info("Processing OAuth authentication for user: {} (Microsoft ID: {})", email, microsoftId);
 
@@ -87,8 +112,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                     microsoftId,
                     email,
                     displayName,
-                    jobTitle,
-                    emailVerified
+                    institutionalId
             );
 
             if (isNewUser) {
@@ -96,6 +120,16 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
             } else {
                 log.info("Existing user signed in: {} (Role: {})", email, user.getRole());
             }
+
+            // Issue JWT for stateless API access
+            String jwt = jwtService.generateToken(user);
+            ResponseCookie tokenCookie = ResponseCookie.from("SESSION_TOKEN", jwt)
+                    .httpOnly(true)
+                    .path("/")
+                    .maxAge(Duration.ofMillis(jwtExpirationMillis))
+                    .sameSite("Lax")
+                    .build();
+            response.addHeader(HttpHeaders.SET_COOKIE, tokenCookie.toString());
 
             // Store Microsoft Graph profile info and user status in session for the success endpoint
             // Using session because request attributes don't persist across redirects
@@ -119,7 +153,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                               (oauth2User.getAttribute("email") != null ? oauth2User.getAttribute("email") : 
                                oauth2User.getAttribute("userPrincipalName"));
                 String displayName = partialProfile.getDisplayName();
-                String jobTitle = partialProfile.getJobTitle();
+                String institutionalId = partialProfile.getJobTitle(); // Microsoft stores institutional ID in jobTitle field
                 
                 if (microsoftId != null && email != null) {
                     boolean isNewUser = !userService.findByMicrosoftId(microsoftId).isPresent();
@@ -128,8 +162,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                             microsoftId,
                             email,
                             displayName,
-                            jobTitle,
-                            true // Microsoft accounts are verified
+                            institutionalId
                     );
                     
                     if (isNewUser) {
@@ -169,7 +202,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                               (oauth2User.getAttribute("email") != null ? oauth2User.getAttribute("email") : 
                                oauth2User.getAttribute("userPrincipalName"));
                 String displayName = partialProfile.getDisplayName();
-                String jobTitle = partialProfile.getJobTitle();
+                String institutionalId = partialProfile.getJobTitle(); // Microsoft stores institutional ID in jobTitle field
                 
                 if (microsoftId != null && email != null) {
                     boolean isNewUser = !userService.findByMicrosoftId(microsoftId).isPresent();
@@ -178,8 +211,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                             microsoftId,
                             email,
                             displayName,
-                            jobTitle,
-                            true
+                            institutionalId
                     );
                     
                     jakarta.servlet.http.HttpSession session = request.getSession();
@@ -262,24 +294,25 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
         // Extract institutional ID from given_name (e.g., "22-0369-330 Giles Anthony" -> "22-0369-330")
         // OAuth2User doesn't have jobTitle, but institutional ID is in given_name
         String givenName = oauth2User.getAttribute("given_name");
-        String jobTitle = null;
+        String institutionalId = null;
         if (givenName != null && !givenName.isEmpty()) {
             // Extract the institutional ID pattern from given_name
+            // Pattern: "22-0369-330 Giles Anthony" or "2010-12345 Name" or "1643 Name"
             java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-                "(\\d{2}-\\d{4}-\\d{3}|\\d{4}-\\d{5}|1-\\d{4})"
+                "^(\\d{2}-\\d{4}-\\d{3}|\\d{4}-\\d{5}|\\d{1,4})\\b"
             );
             java.util.regex.Matcher matcher = pattern.matcher(givenName);
             if (matcher.find()) {
-                jobTitle = matcher.group(1);
+                institutionalId = matcher.group(1);
             }
         }
         
         // Fallback: try jobTitle attribute if given_name extraction failed
-        if (jobTitle == null) {
-            jobTitle = oauth2User.getAttribute("jobTitle");
+        if (institutionalId == null) {
+            institutionalId = oauth2User.getAttribute("jobTitle");
         }
         
-        partialProfile.setJobTitle(jobTitle);
+        partialProfile.setJobTitle(institutionalId); // Microsoft Graph API uses jobTitle field
 
         return partialProfile;
     }

@@ -1,20 +1,27 @@
 package com.scholarsync.backend.config;
 
+import com.scholarsync.backend.security.JwtAuthenticationFilter;
 import com.scholarsync.backend.security.OAuth2LoginSuccessHandler;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    public SecurityConfig(OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
+                         JwtAuthenticationFilter jwtAuthenticationFilter) {
+        this.oAuth2LoginSuccessHandler = oAuth2LoginSuccessHandler;
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -37,6 +44,9 @@ public class SecurityConfig {
                     .baseUri("/login/oauth2/code/*"))
                 .successHandler(oAuth2LoginSuccessHandler)
                 .defaultSuccessUrl("/api/auth/success", true));
+
+        // Support JWT bearer auth in addition to session-based OAuth login
+        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

@@ -7,16 +7,16 @@ import org.springframework.stereotype.Service;
 public class RoleDeterminationService {
 
     /**
-     * Determines user role based on jobTitle institutional ID patterns
-     * 
+     * Determines user role based on institutional ID patterns stored in jobTitle.
+     *
      * Student Patterns:
      * - YY-####-### (e.g., 22-1234-567)
      * - YYYY-##### (e.g., 2010-12345)
-     * 
+     *
      * Teacher Pattern:
-     * - 1-#### (incremental starting from 1-0000, e.g., 1-0001, 1-1234)
-     * 
-     * @param jobTitle The jobTitle from Microsoft account
+     * - Plain incremental number from 1 up to 4 digits (e.g., 1, 12, 133, 1643)
+     *
+     * @param jobTitle The jobTitle from Microsoft account (institutional ID)
      * @return Role enum (STUDENT, TEACHER, ADMIN, or UNKNOWN if no pattern matches)
      */
     public Role determineRole(String jobTitle) {
@@ -36,9 +36,9 @@ public class RoleDeterminationService {
             return Role.STUDENT;
         }
 
-        // Teacher Pattern: 1-#### (incremental starting from 1-0000)
-        // Regex: "1-", followed by 4 digits
-        if (jobTitle.matches("1-\\d{4}")) {
+        // Teacher Pattern: plain incremental number from 1 up to 4 digits
+        // Regex: 1 to 4 digits, entire string (no dashes)
+        if (jobTitle.matches("\\d{1,4}")) {
             return Role.TEACHER;
         }
 
