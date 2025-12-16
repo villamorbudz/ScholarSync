@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Documentation ###
+AUTHENTICATION_STRATEGY.md
+
