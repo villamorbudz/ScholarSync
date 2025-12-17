@@ -38,6 +38,9 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
     @Value("${jwt.expiration:1800000}")
     private long jwtExpirationMillis;
 
+    @Value("${app.frontend.url:http://localhost:5173}")
+    private String frontendUrl;
+
     public OAuth2LoginSuccessHandler(OAuth2AuthorizedClientService authorizedClientService,
                                     MicrosoftGraphService microsoftGraphService,
                                     UserService userService,
@@ -104,21 +107,86 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
             log.info("Processing OAuth authentication for user: {} (Microsoft ID: {})", email, microsoftId);
 
-            // Unified sign up/login: Check if user exists first to determine if it's registration or login
+            // STEP 1: Check if user exists in database BEFORE creating/updating
+            log.info("=== Checking if user exists in database ===");
             boolean isNewUser = !userService.findByMicrosoftId(microsoftId).isPresent();
+            log.info("Database check result: isNewUser={}, microsoftId={}, email={}", isNewUser, microsoftId, email);
             
-            // Create new user (auto-register) or update existing user (login)
-            User user = userService.createOrUpdateUserFromOAuth(
-                    microsoftId,
-                    email,
-                    displayName,
-                    institutionalId
-            );
+            if (isNewUser) {
+                log.info(">>> NEW USER DETECTED: User does not exist in database. Will create new user record.");
+            } else {
+                log.info(">>> EXISTING USER DETECTED: User found in database. Will update existing user record.");
+            }
+            
+            // STEP 2: Create new user (auto-register) or update existing user (login)
+            // This method handles both cases: checks database, creates if not exists, updates if exists
+            User user;
+            try {
+                log.info("=== Calling createOrUpdateUserFromOAuth ===");
+                log.info("Parameters: microsoftId={}, email={}, displayName={}, institutionalId={}", 
+                    microsoftId, email, displayName, institutionalId);
+                
+                user = userService.createOrUpdateUserFromOAuth(
+                        microsoftId,
+                        email,
+                        displayName,
+                        institutionalId
+                );
+                
+                log.info("createOrUpdateUserFromOAuth returned user: ID={}, email={}, role={}", 
+                    user.getId(), user.getEmail(), user.getRole());
+                
+                // STEP 3: Verify the user was saved by querying the database in a NEW transaction
+                // This ensures the previous transaction has committed
+                log.info("=== Verifying user was saved to database (new transaction) ===");
+                
+                // Verify in a new transaction to ensure previous transaction committed
+                boolean userExists = userService.verifyUserExists(user.getId());
+                if (!userExists) {
+                    log.error("CRITICAL ERROR: User was not found in database after transaction commit!");
+                    log.error("This may indicate:");
+                    log.error("1. Transaction was rolled back");
+                    log.error("2. Database connection issue");
+                    log.error("3. Wrong database being queried (check if using H2 vs MySQL)");
+                    throw new RuntimeException("User was not persisted to database - transaction may have rolled back");
+                }
+                
+                User verifiedUser = userService.findByMicrosoftId(microsoftId)
+                    .orElseThrow(() -> new RuntimeException("CRITICAL: User was not found in database after save operation!"));
+                
+                log.info("✓✓✓ VERIFICATION SUCCESS: User found in database after transaction commit!");
+                log.info("User details: ID={}, email={}, role={}, microsoftId={}", 
+                    verifiedUser.getId(), verifiedUser.getEmail(), verifiedUser.getRole(), verifiedUser.getMicrosoftId());
+                log.info("✓ User is confirmed persisted in database and transaction has committed");
+                
+                user = verifiedUser; // Use verified user
+            } catch (IllegalArgumentException e) {
+                log.error("Validation error creating/updating user: {}", e.getMessage(), e);
+                sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST,
+                    "User creation failed",
+                    e.getMessage(),
+                    userProfile, oauth2User);
+                return;
+            } catch (Exception e) {
+                log.error("Database error creating/updating user: {}", e.getMessage(), e);
+                log.error("Exception type: {}, Cause: {}", e.getClass().getName(), e.getCause());
+                if (e.getCause() != null) {
+                    log.error("Root cause: {}", e.getCause().getMessage());
+                }
+                sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+                    "Database error",
+                    "Failed to save user to database: " + e.getMessage(),
+                    userProfile, oauth2User);
+                return;
+            }
 
             if (isNewUser) {
-                log.info("New user registered and signed in: {} (Role: {})", email, user.getRole());
+                log.info("✓✓✓ NEW USER REGISTERED AND SAVED TO DATABASE");
+                log.info("User details: email={}, ID={}, role={}, microsoftId={}", 
+                    email, user.getId(), user.getRole(), user.getMicrosoftId());
+                log.info("✓ Confirmed: New user has STUDENT role and is saved in 'users' table");
             } else {
-                log.info("Existing user signed in: {} (Role: {})", email, user.getRole());
+                log.info("Existing user signed in: {} (ID: {}, Role: {})", email, user.getId(), user.getRole());
             }
 
             // Issue JWT for stateless API access
@@ -138,8 +206,8 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
             session.setAttribute("savedUser", user);
             session.setAttribute("isNewUser", isNewUser);
 
-            // Redirect to success endpoint or frontend
-            super.onAuthenticationSuccess(request, response, authentication);
+            // Redirect to frontend auth success page
+            response.sendRedirect(frontendUrl + "/auth/success");
 
         } catch (WebClientResponseException e) {
             log.error("Error calling Microsoft Graph API: {} (Status: {})", e.getMessage(), e.getStatusCode(), e);
@@ -157,18 +225,38 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                 
                 if (microsoftId != null && email != null) {
                     boolean isNewUser = !userService.findByMicrosoftId(microsoftId).isPresent();
+                    log.info("Fallback: User check: isNewUser={}, microsoftId={}, email={}", isNewUser, microsoftId, email);
                     
-                    User user = userService.createOrUpdateUserFromOAuth(
-                            microsoftId,
-                            email,
-                            displayName,
-                            institutionalId
-                    );
+                    User user;
+                    try {
+                        log.info("Fallback: Attempting to create/update user: microsoftId={}, email={}, displayName={}, institutionalId={}", 
+                            microsoftId, email, displayName, institutionalId);
+                        
+                        user = userService.createOrUpdateUserFromOAuth(
+                                microsoftId,
+                                email,
+                                displayName,
+                                institutionalId
+                        );
+                        
+                        // Verify the user was saved
+                        User verifiedUser = userService.findByMicrosoftId(microsoftId)
+                            .orElseThrow(() -> new RuntimeException("User was not found in database after fallback save"));
+                        
+                        log.info("Fallback: User saved successfully: {} (ID: {}, Role: {}, Verified: {})", 
+                            email, verifiedUser.getId(), verifiedUser.getRole(), verifiedUser.getId().equals(user.getId()));
+                        
+                        user = verifiedUser; // Use verified user
+                    } catch (Exception fallbackInnerException) {
+                        log.error("Fallback: Error creating/updating user: {}", fallbackInnerException.getMessage(), fallbackInnerException);
+                        log.error("Fallback: Exception type: {}, Cause: {}", fallbackInnerException.getClass().getName(), fallbackInnerException.getCause());
+                        throw fallbackInnerException;
+                    }
                     
                     if (isNewUser) {
-                        log.info("New user registered via fallback: {} (Role: {})", email, user.getRole());
+                        log.info("Fallback: New user registered: {} (ID: {}, Role: {})", email, user.getId(), user.getRole());
                     } else {
-                        log.info("Existing user signed in via fallback: {} (Role: {})", email, user.getRole());
+                        log.info("Fallback: Existing user signed in: {} (ID: {}, Role: {})", email, user.getId(), user.getRole());
                     }
                     
                     // Store in session for success endpoint
@@ -177,9 +265,21 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                     session.setAttribute("savedUser", user);
                     session.setAttribute("isNewUser", isNewUser);
                     
-                    // Redirect to success endpoint
-                    super.onAuthenticationSuccess(request, response, authentication);
+                    // Issue JWT for stateless API access
+                    String jwt = jwtService.generateToken(user);
+                    ResponseCookie tokenCookie = ResponseCookie.from("SESSION_TOKEN", jwt)
+                            .httpOnly(true)
+                            .path("/")
+                            .maxAge(Duration.ofMillis(jwtExpirationMillis))
+                            .sameSite("Lax")
+                            .build();
+                    response.addHeader(HttpHeaders.SET_COOKIE, tokenCookie.toString());
+                    
+                    // Redirect to frontend auth success page
+                    response.sendRedirect(frontendUrl + "/auth/success");
                     return;
+                } else {
+                    log.error("Fallback: Missing required fields - microsoftId={}, email={}", microsoftId, email);
                 }
             } catch (Exception fallbackException) {
                 log.error("Fallback user creation also failed: {}", fallbackException.getMessage(), fallbackException);
@@ -206,21 +306,54 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                 
                 if (microsoftId != null && email != null) {
                     boolean isNewUser = !userService.findByMicrosoftId(microsoftId).isPresent();
+                    log.info("Exception handler fallback: User check: isNewUser={}, microsoftId={}, email={}", isNewUser, microsoftId, email);
                     
-                    User user = userService.createOrUpdateUserFromOAuth(
-                            microsoftId,
-                            email,
-                            displayName,
-                            institutionalId
-                    );
+                    User user;
+                    try {
+                        log.info("Exception handler fallback: Attempting to create/update user: microsoftId={}, email={}, displayName={}, institutionalId={}", 
+                            microsoftId, email, displayName, institutionalId);
+                        
+                        user = userService.createOrUpdateUserFromOAuth(
+                                microsoftId,
+                                email,
+                                displayName,
+                                institutionalId
+                        );
+                        
+                        // Verify the user was saved
+                        User verifiedUser = userService.findByMicrosoftId(microsoftId)
+                            .orElseThrow(() -> new RuntimeException("User was not found in database after exception handler save"));
+                        
+                        log.info("Exception handler fallback: User saved successfully: {} (ID: {}, Role: {}, Verified: {})", 
+                            email, verifiedUser.getId(), verifiedUser.getRole(), verifiedUser.getId().equals(user.getId()));
+                        
+                        user = verifiedUser; // Use verified user
+                    } catch (Exception exceptionHandlerInnerException) {
+                        log.error("Exception handler fallback: Error creating/updating user: {}", exceptionHandlerInnerException.getMessage(), exceptionHandlerInnerException);
+                        log.error("Exception handler fallback: Exception type: {}, Cause: {}", exceptionHandlerInnerException.getClass().getName(), exceptionHandlerInnerException.getCause());
+                        throw exceptionHandlerInnerException;
+                    }
                     
                     jakarta.servlet.http.HttpSession session = request.getSession();
                     session.setAttribute("microsoftProfile", partialProfile);
                     session.setAttribute("savedUser", user);
                     session.setAttribute("isNewUser", isNewUser);
                     
-                    super.onAuthenticationSuccess(request, response, authentication);
+                    // Issue JWT for stateless API access
+                    String jwt = jwtService.generateToken(user);
+                    ResponseCookie tokenCookie = ResponseCookie.from("SESSION_TOKEN", jwt)
+                            .httpOnly(true)
+                            .path("/")
+                            .maxAge(Duration.ofMillis(jwtExpirationMillis))
+                            .sameSite("Lax")
+                            .build();
+                    response.addHeader(HttpHeaders.SET_COOKIE, tokenCookie.toString());
+                    
+                    // Redirect to frontend auth success page
+                    response.sendRedirect(frontendUrl + "/auth/success");
                     return;
+                } else {
+                    log.error("Exception handler fallback: Missing required fields - microsoftId={}, email={}", microsoftId, email);
                 }
             } catch (Exception fallbackException) {
                 log.error("Fallback user creation failed: {}", fallbackException.getMessage(), fallbackException);

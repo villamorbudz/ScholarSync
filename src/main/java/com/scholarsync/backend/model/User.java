@@ -12,8 +12,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "users", uniqueConstraints = {
     @UniqueConstraint(columnNames = "email"),
-    @UniqueConstraint(columnNames = "microsoft_id"),
-    @UniqueConstraint(columnNames = "institutional_id")
+    @UniqueConstraint(columnNames = "microsoft_id")
 })
 @Data
 @NoArgsConstructor
@@ -34,13 +33,13 @@ public class User {
     @Column(name = "display_name")
     private String displayName;
 
-    @Column(name = "institutional_id", unique = true)
+    @Column(name = "institutional_id")
     private String institutionalId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private Role role = Role.UNKNOWN;
+    private Role role = Role.STUDENT;
 
     @Column(name = "account_created_at", nullable = false, updatable = false)
     @Builder.Default

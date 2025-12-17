@@ -4,12 +4,17 @@ import com.scholarsync.backend.security.JwtAuthenticationFilter;
 import com.scholarsync.backend.security.OAuth2LoginSuccessHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -25,17 +30,45 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(List.of("http://localhost:5173"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+        
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                 .maximumSessions(1)
                 .maxSessionsPreventsLogin(false))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/login", "/login.html", "/static/**", "/error").permitAll()
-                .requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll() // OAuth2 endpoints must be permitted
+                // Public static resources
+                .requestMatchers("/", "/index.html", "/login", "/login.html", "/static/**", "/error").permitAll()
+                .requestMatchers("/**/*.js", "/**/*.css").permitAll()
+                // OAuth2 endpoints must be permitted
+                .requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll()
+                // Public API endpoints
                 .requestMatchers("/api/public/**").permitAll()
+                // Auth endpoints - require authentication (except test endpoint for debugging)
+                .requestMatchers("/api/auth/test/**").permitAll()
+                .requestMatchers("/api/auth/**").authenticated()
+                // User search endpoint - require authentication
+                .requestMatchers("/api/users/search").authenticated()
+                // Group endpoints - require authentication
+                .requestMatchers("/api/groups/**").authenticated()
+                // Course endpoints - require authentication
+                .requestMatchers("/api/courses/**").authenticated()
                 .anyRequest().authenticated())
             .oauth2Login(oauth2 -> oauth2
                 .loginPage("/login")
@@ -44,23 +77,11 @@ public class SecurityConfig {
                 .redirectionEndpoint(redirect -> redirect
                     .baseUri("/login/oauth2/code/*"))
                 .successHandler(oAuth2LoginSuccessHandler)
-                .defaultSuccessUrl("/api/auth/success", true));
+                .defaultSuccessUrl("http://localhost:5173/auth/success", true));
 
         // Support JWT bearer auth in addition to session-based OAuth login
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
-        return http.build();
-    }
-
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/groups/import", "/api/groups/manual", "/", "/index.html", "/**/*.js", "/**/*.css").permitAll()
-                        .anyRequest().authenticated()
-                )
-                .httpBasic(Customizer.withDefaults());
         return http.build();
     }
 }

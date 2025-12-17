@@ -21,7 +21,7 @@ public class RoleDeterminationService {
      */
     public Role determineRole(String jobTitle) {
         if (jobTitle == null || jobTitle.isEmpty()) {
-            return Role.UNKNOWN; // Placeholder - no fallback to prove parsing works
+            return Role.STUDENT; // Default to STUDENT for new accounts
         }
 
         // Student Pattern 1: YY-####-### (e.g., 22-1234-567)
@@ -47,8 +47,8 @@ public class RoleDeterminationService {
             return Role.ADMIN;
         }
 
-        // No fallback - return UNKNOWN to prove parsing is working correctly
-        return Role.UNKNOWN;
+        // No pattern matches - default to STUDENT for new accounts
+        return Role.STUDENT;
     }
 }
 

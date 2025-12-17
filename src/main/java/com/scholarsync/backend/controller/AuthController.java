@@ -32,6 +32,7 @@ public class AuthController {
     private final UserService userService;
     private final String professorKey;
 
+    @CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
     @GetMapping("/success")
     public ResponseEntity<Map<String, Object>> authSuccess(
             @AuthenticationPrincipal OAuth2User oauth2User,
@@ -349,6 +350,42 @@ public class AuthController {
             return ResponseEntity.ok().body("ok");
         }
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Forbidden");
+    }
+
+    /**
+     * Test endpoint to verify users are being saved to database
+     * GET /api/auth/test/users
+     */
+    @CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
+    @GetMapping("/test/users")
+    public ResponseEntity<Map<String, Object>> testUsers() {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            // Get all users from database
+            java.util.List<User> allUsers = userService.findAllUsers();
+            response.put("success", true);
+            response.put("totalUsers", allUsers.size());
+            
+            java.util.List<Map<String, Object>> usersList = new java.util.ArrayList<>();
+            for (User user : allUsers) {
+                Map<String, Object> userMap = new HashMap<>();
+                userMap.put("id", user.getId());
+                userMap.put("email", user.getEmail());
+                userMap.put("microsoftId", user.getMicrosoftId());
+                userMap.put("displayName", user.getDisplayName());
+                userMap.put("role", user.getRole());
+                userMap.put("institutionalId", user.getInstitutionalId());
+                userMap.put("accountCreatedAt", user.getAccountCreatedAt());
+                userMap.put("lastLoginAt", user.getLastLoginAt());
+                usersList.add(userMap);
+            }
+            response.put("users", usersList);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(500).body(response);
+        }
     }
 
     public AuthController(UserService userService, @Value("${app.professor.key:}") String professorKey) {

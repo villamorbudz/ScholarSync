@@ -20,6 +20,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     
     // Find users by role (useful for filtering students, teachers, etc.)
     List<User> findByRole(Role role);
+    
+    // Search users by display name or institutional ID (case-insensitive)
+    List<User> findByDisplayNameContainingIgnoreCaseOrInstitutionalIdContainingIgnoreCase(
+        String displayName, String institutionalId
+    );
 }
 
 

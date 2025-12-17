@@ -2,9 +2,9 @@ package com.scholarsync.backend.service;
 
 import com.scholarsync.backend.exception.ImportValidationException;
 import com.scholarsync.backend.model.GroupEntity;
-import com.scholarsync.backend.model.Student;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scholarsync.backend.repository.GroupRepository;
-import com.scholarsync.backend.repository.StudentRepository;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -26,12 +26,31 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class GroupImportService {
 
-    private final StudentRepository studentRepository;
     private final GroupRepository groupRepository;
+    private final ObjectMapper objectMapper;
 
-    public GroupImportService(StudentRepository studentRepository, GroupRepository groupRepository) {
-        this.studentRepository = studentRepository;
+    public GroupImportService(GroupRepository groupRepository, ObjectMapper objectMapper) {
         this.groupRepository = groupRepository;
+        this.objectMapper = objectMapper;
+    }
+    
+    private String listToJson(List<String> list) {
+        try {
+            return objectMapper.writeValueAsString(list);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize member IDs to JSON", e);
+        }
+    }
+    
+    private List<String> jsonToList(String json) {
+        try {
+            if (json == null || json.trim().isEmpty()) {
+                return new ArrayList<>();
+            }
+            return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to deserialize member IDs from JSON", e);
+        }
     }
 
     private static class RowRecord {
@@ -89,25 +108,6 @@ public class GroupImportService {
 
             if (!errors.isEmpty()) throw new ImportValidationException(errors);
 
-            // Validate existence and enrollment
-            Set<String> allStudentIds = teams.values().stream().flatMap(List::stream).map(r -> r.studentId).collect(Collectors.toSet());
-            List<Student> studentsFound = studentRepository.findAllByStudentIdIn(new ArrayList<>(allStudentIds));
-            Set<String> foundIds = studentsFound.stream().map(Student::getStudentId).collect(Collectors.toSet());
-            for (String sid : allStudentIds) {
-                if (!foundIds.contains(sid)) {
-                    errors.add(String.format("STUDENT ID=%s: student does not exist", sid));
-                }
-            }
-            // check enrollment and group membership
-            for (Student s : studentsFound) {
-                if (!s.getCourseId().equals(courseId)) {
-                    errors.add(String.format("STUDENT ID=%s: not enrolled in course %d", s.getStudentId(), courseId));
-                }
-                if (s.getGroupId() != null && !s.getGroupId().isEmpty()) {
-                    errors.add(String.format("STUDENT ID=%s: already assigned to group %s", s.getStudentId(), s.getGroupId()));
-                }
-            }
-
             // per-team validations
             for (Map.Entry<String, List<RowRecord>> e : teams.entrySet()) {
                 String team = e.getKey();
@@ -122,29 +122,27 @@ public class GroupImportService {
 
             if (!errors.isEmpty()) throw new ImportValidationException(errors);
 
-            // Create groups and update students
+            // Create groups - only using groups table
             List<GroupEntity> created = new ArrayList<>();
-            Map<String, String> teamToGroupId = new HashMap<>();
             for (Map.Entry<String, List<RowRecord>> e : teams.entrySet()) {
                 String team = e.getKey();
                 List<RowRecord> rows = e.getValue();
                 String leaderId = rows.stream().filter(r -> r.memberNo == 1).findFirst().get().studentId;
                 String gid = UUID.randomUUID().toString();
                 List<String> members = rows.stream().map(r -> r.studentId).collect(Collectors.toList());
-                GroupEntity g = new GroupEntity(gid, team, courseId, leaderId, members, null, Instant.now());
+                String membersJson = listToJson(members);
+                GroupEntity g = GroupEntity.builder()
+                    .groupId(gid)
+                    .groupName(team)
+                    .courseId(courseId)
+                    .leaderStudentId(leaderId)
+                    .memberStudentIds(membersJson)
+                    .adviserId(null)
+                    .createdAt(Instant.now())
+                    .build();
                 groupRepository.save(g);
                 created.add(g);
-                teamToGroupId.put(team, gid);
             }
-
-            // update students
-            List<Student> toUpdate = studentsFound.stream().filter(s -> allStudentIds.contains(s.getStudentId())).collect(Collectors.toList());
-            for (Student s : toUpdate) {
-                // find which team
-                String team = teams.entrySet().stream().filter(en -> en.getValue().stream().anyMatch(r -> r.studentId.equals(s.getStudentId()))).findFirst().get().getKey();
-                s.setGroupId(teamToGroupId.get(team));
-            }
-            studentRepository.saveAll(toUpdate);
             return created;
 
         } catch (ImportValidationException ex) {
@@ -182,34 +180,33 @@ public class GroupImportService {
 
         if (!errors.isEmpty()) throw new ImportValidationException(errors);
 
-        // fetch students
-        List<Student> students = studentRepository.findAllByStudentIdIn(memberStudentIds);
-        Set<String> found = students.stream().map(Student::getStudentId).collect(Collectors.toSet());
-        for (String sid : memberStudentIds) {
-            if (!found.contains(sid)) {
-                errors.add(String.format("GROUP NAME=%s: STUDENT ID=%s does not exist", groupName, sid));
-            }
-        }
-        for (Student s : students) {
-            if (!s.getCourseId().equals(courseId)) {
-                errors.add(String.format("GROUP NAME=%s: STUDENT ID=%s not enrolled in course %d", groupName, s.getStudentId(), courseId));
-            }
-            if (s.getGroupId() != null && !s.getGroupId().isEmpty()) {
-                errors.add(String.format("GROUP NAME=%s: STUDENT ID=%s already assigned to group %s", groupName, s.getStudentId(), s.getGroupId()));
+        // Check if any student is already in a group for this course
+        List<GroupEntity> existingGroups = groupRepository.findByCourseId(courseId);
+        for (GroupEntity existingGroup : existingGroups) {
+            List<String> existingMembers = jsonToList(existingGroup.getMemberStudentIds());
+            for (String memberId : memberStudentIds) {
+                if (existingMembers.contains(memberId)) {
+                    errors.add(String.format("GROUP NAME=%s: STUDENT ID=%s already assigned to group %s in course %d", 
+                            groupName, memberId, existingGroup.getGroupName(), courseId));
+                }
             }
         }
 
         if (!errors.isEmpty()) throw new ImportValidationException(errors);
 
+        // Create group - only using groups table
         String gid = UUID.randomUUID().toString();
-        GroupEntity g = new GroupEntity(gid, groupName, courseId, leaderStudentId, new ArrayList<>(memberStudentIds), null, Instant.now());
+        String membersJson = listToJson(memberStudentIds);
+        GroupEntity g = GroupEntity.builder()
+            .groupId(gid)
+            .groupName(groupName)
+            .courseId(courseId)
+            .leaderStudentId(leaderStudentId)
+            .memberStudentIds(membersJson)
+            .adviserId(null)
+            .createdAt(Instant.now())
+            .build();
         groupRepository.save(g);
-
-        // update students
-        for (Student s : students) {
-            s.setGroupId(gid);
-        }
-        studentRepository.saveAll(students);
         return g;
     }
 }

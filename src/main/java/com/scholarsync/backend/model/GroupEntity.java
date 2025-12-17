@@ -1,13 +1,9 @@
 package com.scholarsync.backend.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import java.time.Instant;
-import java.util.List;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -16,9 +12,10 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class GroupEntity {
     @Id
-    @Column(name = "group_id", nullable = false)
+    @Column(name = "group_id", nullable = false, length = 255, columnDefinition = "VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
     private String groupId;
 
     @Column(name = "group_name", nullable = false)
@@ -30,9 +27,9 @@ public class GroupEntity {
     @Column(name = "leader_student_id", nullable = false)
     private String leaderStudentId;
 
-    @ElementCollection
-    @Column(name = "member_student_ids")
-    private List<String> memberStudentIds;
+    @Lob
+    @Column(name = "member_student_ids", length = 65535)
+    private String memberStudentIds; // JSON array stored as string: ["id1", "id2", ...]
 
     @Column(name = "adviser_id")
     private String adviserId;
