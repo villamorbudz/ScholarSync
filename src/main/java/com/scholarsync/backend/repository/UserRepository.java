@@ -20,6 +20,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     
     // Find users by role (useful for filtering students, teachers, etc.)
     List<User> findByRole(Role role);
+    
+    // Find users by institutional IDs (for Excel import)
+    List<User> findByInstitutionalIdIn(List<String> institutionalIds);
 }
 
 

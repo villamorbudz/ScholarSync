@@ -44,7 +44,14 @@ public class GroupImportController {
     @CrossOrigin(origins = "http://localhost:5173")
     @PostMapping(path = "/api/groups/manual", consumes = {"application/json"})
     public ResponseEntity<?> createManualGroup(@RequestBody GroupCreateRequest req) {
-        GroupEntity created = importService.createManualGroup(req.getGroupName(), req.getLeaderStudentId(), req.getCourseId(), req.getMemberStudentIds());
+        // Note: GroupCreateRequest still uses leaderStudentId/memberStudentIds (institutional IDs)
+        // Service will convert to UUIDs internally
+        GroupEntity created = importService.createManualGroup(
+            req.getGroupName(), 
+            req.getLeaderStudentId(), // institutionalId
+            req.getCourseId(), 
+            req.getMemberStudentIds() // institutionalIds
+        );
         return ResponseEntity.ok(created);
     }
 

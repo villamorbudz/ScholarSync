@@ -32,11 +32,10 @@ build/
 ### VS Code ###
 .vscode/
 
-<<<<<<< HEAD
 ### Documentation ###
-AUTHENTICATION_STRATEGY.md
+# Ignore all .md files except README.md
+*.md
+!README.md
 
-=======
 # Local DB credentials (keep out of VCS)
 /db-credentials.properties
->>>>>>> 51e7c12 (Professor and student UIs, student create group modal)

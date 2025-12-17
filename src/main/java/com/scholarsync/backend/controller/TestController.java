@@ -27,7 +27,7 @@ public class TestController {
 
     /**
      * Test role determination with a given institutional ID
-     *
+     * 
      * POST /api/public/test/role
      * Body: { "institutionalId": "1643" }
      */

@@ -59,7 +59,7 @@ export default function StudentLookup() {
           setCreateStatus(JSON.stringify(created, null, 2));
           // set the local My Group display to the new group and student
           setGroupName(''); setMembers([]); setAvailable([]); setSearch(''); setShowCreateModal(false);
-          setStudentObj({ studentId: leader })
+          setStudentObj({ institutionalId: leader, studentId: leader }) // Support both field names
           setGroupObj(created)
         } catch(e) { setCreateStatus(txt) }
       }
@@ -112,11 +112,15 @@ export default function StudentLookup() {
             <label style={{marginTop:8}}>Members (search and click to add)</label>
             <input placeholder="Search students by id, name, or email" value={search} onChange={e => setSearch(e.target.value)} style={{width: '100%'}} />
             <div style={{border: '1px solid #ddd', maxHeight: 200, overflow: 'auto', marginTop: 6}}>
-              {available.map(s => (
-                <div key={s.studentId} style={{padding: 6, cursor: 'pointer'}} onClick={() => { if (!members.includes(s.studentId)) setMembers([...members, s.studentId]) }}>
-                  {s.studentId} — {s.firstName} {s.lastName} <span style={{color:'#666'}}>({s.email})</span>
-                </div>
-              ))}
+              {available.map(s => {
+                const id = s.institutionalId || s.studentId; // Support both old and new format
+                const name = s.displayName || `${s.firstName || ''} ${s.lastName || ''}`.trim() || id;
+                return (
+                  <div key={id} style={{padding: 6, cursor: 'pointer'}} onClick={() => { if (!members.includes(id)) setMembers([...members, id]) }}>
+                    {id} — {name} <span style={{color:'#666'}}>({s.email})</span>
+                  </div>
+                );
+              })}
             </div>
             <div style={{marginTop: 8}}>
               {members.map(m => (

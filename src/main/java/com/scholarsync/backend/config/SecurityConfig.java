@@ -33,9 +33,15 @@ public class SecurityConfig {
                 .maximumSessions(1)
                 .maxSessionsPreventsLogin(false))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/login", "/login.html", "/static/**", "/error").permitAll()
-                .requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll() // OAuth2 endpoints must be permitted
+                // Public static resources
+                .requestMatchers("/", "/index.html", "/login", "/login.html", "/static/**", "/error").permitAll()
+                .requestMatchers("/**/*.js", "/**/*.css").permitAll()
+                // OAuth2 endpoints must be permitted
+                .requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll()
+                // Public API endpoints
                 .requestMatchers("/api/public/**").permitAll()
+                // Group import/manual endpoints
+                .requestMatchers("/api/groups/import", "/api/groups/manual").permitAll()
                 .anyRequest().authenticated())
             .oauth2Login(oauth2 -> oauth2
                 .loginPage("/login")
@@ -44,23 +50,12 @@ public class SecurityConfig {
                 .redirectionEndpoint(redirect -> redirect
                     .baseUri("/login/oauth2/code/*"))
                 .successHandler(oAuth2LoginSuccessHandler)
-                .defaultSuccessUrl("/api/auth/success", true));
+                .defaultSuccessUrl("/api/auth/success", true))
+            .httpBasic(Customizer.withDefaults());
 
         // Support JWT bearer auth in addition to session-based OAuth login
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
-        return http.build();
-    }
-
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/groups/import", "/api/groups/manual", "/", "/index.html", "/**/*.js", "/**/*.css").permitAll()
-                        .anyRequest().authenticated()
-                )
-                .httpBasic(Customizer.withDefaults());
         return http.build();
     }
 }
