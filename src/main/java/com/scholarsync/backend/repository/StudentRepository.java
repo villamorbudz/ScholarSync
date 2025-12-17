@@ -9,4 +9,7 @@ import org.springframework.stereotype.Repository;
 public interface StudentRepository extends JpaRepository<Student, String> {
     List<Student> findAllByStudentIdIn(List<String> studentIds);
     List<Student> findAllByCourseId(Long courseId);
+
+    @org.springframework.data.jpa.repository.Query("select distinct s.courseId from Student s")
+    java.util.List<Long> findDistinctCourseIds();
 }

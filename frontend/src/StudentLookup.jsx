@@ -8,6 +8,8 @@ export default function StudentLookup() {
   const [members, setMembers] = useState([])
   const [available, setAvailable] = useState([])
   const [search, setSearch] = useState('')
+  const [courses, setCourses] = useState([])
+  const [courseSearch, setCourseSearch] = useState('')
   const [studentObj, setStudentObj] = useState(null)
   const [groupObj, setGroupObj] = useState(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -30,11 +32,29 @@ export default function StudentLookup() {
     }
   }
 
+  const fetchCourses = async (q) => {
+    try {
+      const res = await fetch(`http://localhost:8080/api/courses?q=${encodeURIComponent(q||'')}`)
+      if (res.ok) {
+        const json = await res.json()
+        setCourses(json)
+      }
+    } catch (err) {
+      console.error('courses error', err)
+    }
+  }
+
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => fetchSuggestions(search), 300)
     return () => clearTimeout(searchTimer.current)
   }, [search, courseId])
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => fetchCourses(courseSearch), 300)
+    return () => clearTimeout(searchTimer.current)
+  }, [courseSearch])
 
   const createGroup = async () => {
     // The first member in the members list becomes the group leader
@@ -101,8 +121,16 @@ export default function StudentLookup() {
         <div style={{position:'fixed', left:0, top:0, right:0, bottom:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center'}}>
           <div style={{background:'#fff', padding:20, width:600, maxWidth:'95%', borderRadius:6}}>
             <h3>Create Group</h3>
-            <label style={{marginTop:8}}>Course ID</label>
-            <input type="number" value={courseId} onChange={e => setCourseId(e.target.value)} style={{width:'100%'}} />
+            <label style={{marginTop:8}}>Course (search and select)</label>
+            <input placeholder="Search courses by id or name" value={courseSearch} onChange={e => setCourseSearch(e.target.value)} style={{width: '100%'}} />
+            <div style={{border: '1px solid #ddd', maxHeight: 120, overflow: 'auto', marginTop: 6}}>
+              {courses.map(c => (
+                <div key={c.courseId} style={{padding: 6, cursor: 'pointer'}} onClick={() => { setCourseId(c.courseId); setCourseSearch(c.label) }}>
+                  {c.label} (ID: {c.courseId})
+                </div>
+              ))}
+            </div>
+            <div style={{fontSize:12, color:'#666', marginTop:6}}>Selected course: <strong>{courseId}</strong></div>
 
             <label style={{marginTop:8}}>Group Name</label>
             <input value={groupName} onChange={e => setGroupName(e.target.value)} style={{width:'100%'}} />

@@ -78,6 +78,30 @@ public class GroupImportServiceTest {
     }
 
     @Test
+    void importSuccessWithLeadingBlankRow() throws Exception {
+        Long courseId = 4L;
+        Student s1 = new Student("S1", courseId, null, "L1", "F1", "a@b.c");
+        Student s2 = new Student("S2", courseId, null, "L2", "F2", "b@b.c");
+        Student s3 = new Student("S3", courseId, null, "L3", "F3", "c@b.c");
+        studentRepository.saveAll(List.of(s1, s2, s3));
+
+        String[][] rows = new String[][]{
+            {"","","","","",""},
+            {"TEAM CODE","MEMBER #","STUDENT ID","LASTNAME","FIRSTNAME","EMAIL"},
+            {"TEAM-A","1","S1","L1","F1","a@b.c"},
+            {"TEAM-A","2","S2","L2","F2","b@b.c"},
+            {"TEAM-B","1","S3","L3","F3","c@b.c"}
+        };
+        MockMultipartFile file = buildExcel(rows);
+        var created = importService.importFromExcel(file, courseId);
+        assertThat(created).hasSize(2);
+        Student ss1 = studentRepository.findById("S1").get();
+        Student ss2 = studentRepository.findById("S2").get();
+        assertThat(ss1.getGroupId()).isNotNull();
+        assertThat(ss1.getGroupId()).isEqualTo(ss2.getGroupId());
+    }
+
+    @Test
     void manualCreateSuccess() throws Exception {
         Long courseId = 2L;
         Student s1 = new Student("L1", courseId, null, "L1", "F1", "a@b.c");

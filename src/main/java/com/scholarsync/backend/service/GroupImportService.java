@@ -48,16 +48,21 @@ public class GroupImportService {
             Set<String> seenStudents = new HashSet<>();
             List<String> errors = new ArrayList<>();
 
-            boolean firstRowHeader = false;
-            Row firstRow = sheet.getRow(sheet.getFirstRowNum());
-            if (firstRow != null) {
-                String v0 = firstRow.getCell(0) != null ? firstRow.getCell(0).toString().trim().toUpperCase() : "";
-                if (v0.contains("TEAM")) {
-                    firstRowHeader = true;
+            // Find header row more robustly: scan for the first row that looks like a header
+            int headerRow = -1;
+            for (int i = sheet.getFirstRowNum(); i <= sheet.getLastRowNum(); i++) {
+                Row r0 = sheet.getRow(i);
+                if (r0 == null) continue;
+                String c0 = r0.getCell(0) != null ? r0.getCell(0).toString().trim().toUpperCase() : "";
+                String c1 = r0.getCell(1) != null ? r0.getCell(1).toString().trim().toUpperCase() : "";
+                String c2 = r0.getCell(2) != null ? r0.getCell(2).toString().trim().toUpperCase() : "";
+                if (c0.contains("TEAM") && (c1.contains("MEMBER") || c2.contains("STUDENT"))) {
+                    headerRow = i;
+                    break;
                 }
             }
 
-            int start = firstRowHeader ? sheet.getFirstRowNum() + 1 : sheet.getFirstRowNum();
+            int start = headerRow >= 0 ? headerRow + 1 : sheet.getFirstRowNum();
             for (int r = start; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
@@ -66,7 +71,14 @@ public class GroupImportService {
                 String memberNoStr = row.getCell(1) != null ? row.getCell(1).toString().trim() : "";
                 int memberNo;
                 try {
-                    memberNo = (int) Double.parseDouble(memberNoStr);
+                    org.apache.poi.ss.usermodel.Cell cell = row.getCell(1);
+                    if (cell != null && cell.getCellType() == org.apache.poi.ss.usermodel.CellType.NUMERIC) {
+                        memberNo = (int) cell.getNumericCellValue();
+                    } else {
+                        // strip non-numeric characters and parse
+                        String digits = memberNoStr.replaceAll("[^0-9.-]", "");
+                        memberNo = (int) Double.parseDouble(digits);
+                    }
                 } catch (Exception ex) {
                     errors.add(String.format("TEAM CODE=%s: invalid MEMBER # '%s'", teamCode, memberNoStr));
                     continue;
