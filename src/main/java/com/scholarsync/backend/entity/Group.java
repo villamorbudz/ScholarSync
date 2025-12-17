@@ -1,13 +1,9 @@
 package com.scholarsync.backend.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 
 @Entity
 @Table(name = "groups")
-@Getter
-@Setter
 public class Group {
 
     @Id
@@ -15,4 +11,9 @@ public class Group {
     private Long id;
 
     private String name;
+
+    public Long getId() { return id; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
 }
