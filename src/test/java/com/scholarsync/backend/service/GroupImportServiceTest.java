@@ -71,8 +71,8 @@ public class GroupImportServiceTest {
         var created = importService.importFromExcel(file, courseId);
         assertThat(created).hasSize(2);
         // verify students updated
-        Student ss1 = studentRepository.findById("S1").get();
-        Student ss2 = studentRepository.findById("S2").get();
+        Student ss1 = studentRepository.findByStudentIdAndCourseId("S1", courseId).get();
+        Student ss2 = studentRepository.findByStudentIdAndCourseId("S2", courseId).get();
         assertThat(ss1.getGroupId()).isNotNull();
         assertThat(ss1.getGroupId()).isEqualTo(ss2.getGroupId());
     }
@@ -84,11 +84,11 @@ public class GroupImportServiceTest {
         Student s2 = new Student("M1", courseId, null, "L2", "F2", "b@b.c");
         studentRepository.saveAll(List.of(s1, s2));
 
-        var created = importService.createManualGroup("TEAM-M", "L1", courseId, List.of("L1", "M1"));
+        var created = importService.createManualGroup("TEAM-M", "L1", courseId, List.of("L1", "M1"), "L1");
         assertThat(created).isNotNull();
         assertThat(created.getGroupName()).isEqualTo("TEAM-M");
-        Student leader = studentRepository.findById("L1").get();
-        Student member = studentRepository.findById("M1").get();
+        Student leader = studentRepository.findByStudentIdAndCourseId("L1", courseId).get();
+        Student member = studentRepository.findByStudentIdAndCourseId("M1", courseId).get();
         assertThat(leader.getGroupId()).isEqualTo(created.getGroupId());
         assertThat(member.getGroupId()).isEqualTo(created.getGroupId());
     }
@@ -100,7 +100,7 @@ public class GroupImportServiceTest {
         Student s2 = new Student("M2", courseId, "existing-group", "L2", "F2", "b@b.c");
         studentRepository.saveAll(List.of(s1, s2));
 
-        var ex = org.assertj.core.api.Assertions.catchThrowable(() -> importService.createManualGroup("TEAM-N", "L2", courseId, List.of("L2", "M2")));
+        var ex = org.assertj.core.api.Assertions.catchThrowable(() -> importService.createManualGroup("TEAM-N", "L2", courseId, List.of("L2", "M2"), "L2"));
         assertThat(ex).isInstanceOf(com.scholarsync.backend.exception.ImportValidationException.class);
         var ive = (com.scholarsync.backend.exception.ImportValidationException) ex;
         assertThat(ive.getErrors()).anyMatch(s -> s.contains("already assigned"));

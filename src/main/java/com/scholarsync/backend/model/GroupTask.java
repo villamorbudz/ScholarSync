@@ -27,7 +27,8 @@ public class GroupTask {
     @Column(name = "gctask_title", nullable = false, length = 60)
     private String gctaskTitle;
     
-    @Column(name = "gctask_desc", nullable = false, columnDefinition = "LONGTEXT")
+    @Lob
+    @Column(name = "gctask_desc", nullable = false)
     private String gctaskDesc;
     
     @Column(name = "gctask_progress", nullable = false)
@@ -40,6 +41,6 @@ public class GroupTask {
     @Column(name = "gctask_end", nullable = false)
     private LocalDateTime gctaskEnd;
     
-    @Column(name = "gctask_owner", nullable = false, columnDefinition = "VARCHAR(255)")
+    @Column(name = "gctask_owner", nullable = false, length = 255)
     private String gctaskOwner; // User's institutional ID (stored as string to match database)
 }

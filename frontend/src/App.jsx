@@ -6,6 +6,7 @@ import CourseManagement from './CourseManagement'
 import GroupDetail from './GroupDetail'
 import CourseDetail from './CourseDetail'
 import StudentCourses from './StudentCourses'
+import Login from './Login'
 
 export default function App() {
   return (
@@ -448,53 +449,6 @@ function AuthSuccess() {
   return null
 }
 
-function Login() {
-  return (
-    <div className="login-container">
-      {/* Background Image - Full Screen */}
-      <div className="login-bg-image"></div>
-      
-      {/* Animated Color Overlay */}
-      <div className="login-color-overlay">
-        <div className="color-blob blob-1"></div>
-        <div className="color-blob blob-2"></div>
-        <div className="color-blob blob-3"></div>
-        <div className="color-blob blob-4"></div>
-      </div>
-
-      {/* Left Side Content - Logo and Text */}
-      <div className="login-left-content">
-        {/* Logo */}
-        <div className="login-logo-container">
-          <img src="/ScholarSync_Light.png" alt="ScholarSync Logo" className="login-logo-img" />
-        </div>
-
-        {/* Greeting Text */}
-        <div className="login-greeting-text">
-          Welcome to ScholarSync
-        </div>
-
-        {/* Other Text */}
-        <div className="login-description-text">
-          Connect, collaborate, and manage your academic groups seamlessly. 
-          Sign in with your Microsoft account to get started.
-        </div>
-
-        {/* Sign In Button */}
-        <div className="login-button-container">
-          <a 
-            href="http://localhost:8080/login/oauth2/authorization/microsoft" 
-            className="microsoft-login-button"
-          >
-            <span className="microsoft-icon"></span>
-            <span>Sign in with Microsoft</span>
-          </a>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function Home() {
   return (
     <div>
@@ -505,34 +459,234 @@ function Home() {
 }
 
 function Dashboard() {
+  const navigate = useNavigate()
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [createdGroups, setCreatedGroups] = useState([])
   const [assignedGroups, setAssignedGroups] = useState([])
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingGroup, setEditingGroup] = useState(null)
 
   const fetchGroups = async () => {
-    // TODO: Replace with actual API endpoint when available
-    // For now, groups will be added via the create modal
-    // Keep mock data for initial display
-    setCreatedGroups([
-      { id: 1, groupName: 'Group_Name', subjectCode: 'Subject_Code', adviser: 'Dr. Cheryl Pantaleon', members: 5 }
-    ])
-    setAssignedGroups([
-      { id: 2, groupName: 'Group_Name', subjectCode: 'Subject_Code', adviser: 'Dr. Jane Smith', members: 4 }
-    ])
+    try {
+      // Get current user's institutional ID
+      const currentUser = user || JSON.parse(localStorage.getItem('user') || 'null')
+      const userInstitutionalId = currentUser?.institutionalId
+      
+      if (!userInstitutionalId) {
+        setCreatedGroups([])
+        setAssignedGroups([])
+        return
+      }
+      
+      // Fetch all groups
+      const groupsResponse = await fetch('http://localhost:8080/api/groups', {
+        credentials: 'include'
+      })
+      
+      if (!groupsResponse.ok) {
+        console.error('Failed to fetch groups')
+        setCreatedGroups([])
+        setAssignedGroups([])
+        return
+      }
+      
+      const groups = await groupsResponse.json()
+      
+      if (!Array.isArray(groups) || groups.length === 0) {
+        setCreatedGroups([])
+        setAssignedGroups([])
+        return
+      }
+      
+      // Fetch course details for all groups and enrich group data
+      const enrichedGroups = await Promise.all(
+        groups.map(async (group) => {
+          try {
+            // Fetch course details
+            const courseResponse = await fetch(`http://localhost:8080/api/courses/${group.courseId}`, {
+              credentials: 'include'
+            })
+            
+            let courseCode = 'N/A'
+            let courseAdviser = 'N/A'
+            
+            if (courseResponse.ok) {
+              const course = await courseResponse.json()
+              courseCode = course.courseCode || 'N/A'
+              courseAdviser = course.courseAdviser || 'N/A'
+            }
+            
+            // Parse member student IDs
+            let memberCount = 1 // At least the leader
+            try {
+              if (group.memberStudentIds) {
+                const memberIds = JSON.parse(group.memberStudentIds)
+                if (Array.isArray(memberIds)) {
+                  memberCount = memberIds.length + 1 // +1 for leader
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing memberStudentIds:', e)
+            }
+            
+            return {
+              id: group.groupId,
+              groupId: group.groupId,
+              groupName: group.groupName,
+              subjectCode: courseCode,
+              adviser: courseAdviser,
+              members: memberCount,
+              leaderStudentId: group.leaderStudentId,
+              memberStudentIds: group.memberStudentIds,
+              createdBy: group.createdBy || null
+            }
+          } catch (err) {
+            console.error(`Error enriching group ${group.groupId}:`, err)
+            return {
+              id: group.groupId,
+              groupId: group.groupId,
+              groupName: group.groupName,
+              subjectCode: 'N/A',
+              adviser: 'N/A',
+              members: 1,
+              leaderStudentId: group.leaderStudentId,
+              memberStudentIds: group.memberStudentIds,
+              createdBy: group.createdBy || null
+            }
+          }
+        })
+      )
+      
+      // Determine user role
+      const userRole = currentUser?.role || 'STUDENT'
+      const isStudent = userRole === 'STUDENT'
+      const isTeacher = userRole === 'TEACHER'
+      
+      // Filter groups based on user role
+      let created = []
+      let assigned = []
+      
+      if (isStudent) {
+        // For STUDENTS:
+        // Created Groups = groups where student is the leader AND they created it themselves
+        // (If createdBy is null/undefined, assume old behavior: if student is leader, it's their created group)
+        created = enrichedGroups.filter(g => {
+          const isLeader = g.leaderStudentId && g.leaderStudentId.toString().trim() === userInstitutionalId.toString().trim()
+          if (!isLeader) return false
+          
+          // If createdBy is null/undefined (old groups), assume student created it if they're the leader
+          if (!g.createdBy) {
+            return true
+          }
+          
+          // Otherwise, check if student created it
+          const createdByStudent = g.createdBy.toString().trim() === userInstitutionalId.toString().trim()
+          return createdByStudent
+        })
+        
+        // Assigned Groups = groups where student is a member (including if they're leader but group was created by teacher)
+        assigned = enrichedGroups.filter(g => {
+          const isLeader = g.leaderStudentId && g.leaderStudentId.toString().trim() === userInstitutionalId.toString().trim()
+          
+          // Check if user is in memberStudentIds
+          try {
+            if (g.memberStudentIds) {
+              const memberIds = JSON.parse(g.memberStudentIds)
+              if (Array.isArray(memberIds)) {
+                const isMember = memberIds.some(id => 
+                  id && id.toString().trim() === userInstitutionalId.toString().trim()
+                )
+                
+                // If user is the leader but group was created by someone else (teacher), show in Assigned
+                const isLeaderButNotCreator = isLeader && 
+                  g.createdBy && 
+                  g.createdBy.toString().trim() !== userInstitutionalId.toString().trim()
+                
+                // If user is a member (but not leader), show in Assigned
+                const isMemberButNotLeader = isMember && !isLeader
+                
+                return isMemberButNotLeader || isLeaderButNotCreator
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing memberStudentIds for filtering:', e, 'Group:', g.groupId, 'memberStudentIds:', g.memberStudentIds)
+          }
+          return false
+        })
+      } else if (isTeacher) {
+        // For TEACHERS:
+        // Created Groups = groups created by this teacher
+        created = enrichedGroups.filter(g => {
+          return g.createdBy && g.createdBy.toString().trim() === userInstitutionalId.toString().trim()
+        })
+        
+        // Assigned Groups = groups where teacher is a member (if applicable) or groups they manage
+        // For now, teachers see all groups they created in "Created Groups"
+        assigned = []
+      } else {
+        // Fallback: Default behavior
+        created = enrichedGroups.filter(g => {
+          const isLeader = g.leaderStudentId && g.leaderStudentId.toString().trim() === userInstitutionalId.toString().trim()
+          return isLeader
+        })
+        
+        assigned = enrichedGroups.filter(g => {
+          if (g.leaderStudentId && g.leaderStudentId.toString().trim() === userInstitutionalId.toString().trim()) {
+            return false
+          }
+          try {
+            if (g.memberStudentIds) {
+              const memberIds = JSON.parse(g.memberStudentIds)
+              if (Array.isArray(memberIds)) {
+                return memberIds.some(id => 
+                  id && id.toString().trim() === userInstitutionalId.toString().trim()
+                )
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing memberStudentIds for filtering:', e)
+          }
+          return false
+        })
+      }
+      
+      // Debug logging (can be removed in production)
+      console.log('Group filtering:', {
+        userInstitutionalId,
+        totalGroups: enrichedGroups.length,
+        createdCount: created.length,
+        assignedCount: assigned.length,
+        assignedGroups: assigned.map(g => ({ groupId: g.groupId, groupName: g.groupName, memberStudentIds: g.memberStudentIds }))
+      })
+      
+      setCreatedGroups(created)
+      setAssignedGroups(assigned)
+    } catch (err) {
+      console.error('Error fetching groups:', err)
+      setCreatedGroups([])
+      setAssignedGroups([])
+    }
   }
 
   useEffect(() => {
     // Get user data from localStorage (set by AuthSuccess)
     const userData = localStorage.getItem('user')
     if (userData) {
-      setUser(JSON.parse(userData))
+      const parsedUser = JSON.parse(userData)
+      setUser(parsedUser)
+      setLoading(false)
+    } else {
+      setLoading(false)
     }
-    setLoading(false)
-    
-    fetchGroups()
   }, [])
+  
+  // Fetch groups when user is available
+  useEffect(() => {
+    if (user?.institutionalId) {
+      fetchGroups()
+    }
+  }, [user?.institutionalId])
 
   const handleLogout = async () => {
     try {
@@ -694,46 +848,88 @@ function Dashboard() {
             <div className="dashboard-groups-category">
               <h3 className="dashboard-groups-category-title">Created Groups</h3>
               <div className="dashboard-groups-list">
-                {createdGroups.map(group => (
-                  <div 
-                    key={group.id} 
-                    className="dashboard-group-card"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => navigate(`/groups/${group.groupId}`)}
-                  >
-                    <div className="dashboard-group-card-content">
-                      <div className="dashboard-group-name">{group.groupName}</div>
-                      <div className="dashboard-group-subject">{group.subjectCode}</div>
-                      <div className="dashboard-group-adviser">Adviser: {group.adviser}</div>
-                    </div>
-                    <div className="dashboard-group-badge dashboard-group-badge-blue">
-                      {group.members} members
-                    </div>
+                {createdGroups.length === 0 ? (
+                  <div style={{ padding: '20px', color: '#666', textAlign: 'center' }}>
+                    No groups created yet.
                   </div>
-                ))}
+                ) : (
+                  createdGroups.map(group => (
+                    <div 
+                      key={group.id} 
+                      className="dashboard-group-card"
+                      style={{ cursor: 'pointer', position: 'relative' }}
+                      onClick={() => navigate(`/groups/${group.groupId}`)}
+                    >
+                      {user && user.role === 'TEACHER' && (
+                        <button
+                          className="group-edit-icon-btn"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingGroup(group)
+                          }}
+                          title="Edit group"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                        </button>
+                      )}
+                      <div className="dashboard-group-card-content">
+                        <div className="dashboard-group-name">{group.groupName}</div>
+                        <div className="dashboard-group-subject">{group.subjectCode}</div>
+                        <div className="dashboard-group-adviser">Adviser: {group.adviser}</div>
+                      </div>
+                      <div className="dashboard-group-badge dashboard-group-badge-blue">
+                        {group.members} members
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
             <div className="dashboard-groups-category">
               <h3 className="dashboard-groups-category-title">Assigned Groups</h3>
               <div className="dashboard-groups-list">
-                {assignedGroups.map(group => (
-                  <div 
-                    key={group.id} 
-                    className="dashboard-group-card"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => navigate(`/groups/${group.groupId}`)}
-                  >
-                    <div className="dashboard-group-card-content">
-                      <div className="dashboard-group-name">{group.groupName}</div>
-                      <div className="dashboard-group-subject">{group.subjectCode}</div>
-                      <div className="dashboard-group-adviser">Adviser: {group.adviser}</div>
-                    </div>
-                    <div className="dashboard-group-badge dashboard-group-badge-pink">
-                      {group.members} members
-                    </div>
+                {assignedGroups.length === 0 ? (
+                  <div style={{ padding: '20px', color: '#666', textAlign: 'center' }}>
+                    No assigned groups yet.
                   </div>
-                ))}
+                ) : (
+                  assignedGroups.map(group => (
+                    <div 
+                      key={group.id} 
+                      className="dashboard-group-card"
+                      style={{ cursor: 'pointer', position: 'relative' }}
+                      onClick={() => navigate(`/groups/${group.groupId}`)}
+                    >
+                      {user && user.role === 'TEACHER' && (
+                        <button
+                          className="group-edit-icon-btn"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingGroup(group)
+                          }}
+                          title="Edit group"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                        </button>
+                      )}
+                      <div className="dashboard-group-card-content">
+                        <div className="dashboard-group-name">{group.groupName}</div>
+                        <div className="dashboard-group-subject">{group.subjectCode}</div>
+                        <div className="dashboard-group-adviser">Adviser: {group.adviser}</div>
+                      </div>
+                      <div className="dashboard-group-badge dashboard-group-badge-pink">
+                        {group.members} members
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -747,6 +943,18 @@ function Dashboard() {
             // Add the new group to created groups
             setCreatedGroups(prev => [...prev, newGroup])
             setShowCreateModal(false)
+            // Refresh groups list
+            fetchGroups()
+          }}
+        />
+      )}
+      {editingGroup && (
+        <EditGroupModal
+          group={editingGroup}
+          user={user}
+          onClose={() => setEditingGroup(null)}
+          onSuccess={() => {
+            setEditingGroup(null)
             // Refresh groups list
             fetchGroups()
           }}
@@ -1172,6 +1380,425 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
               {loading ? 'Creating...' : 'COMPLETE'}
             </button>
           </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function EditGroupModal({ group, user, onClose, onSuccess }) {
+  const [groupName, setGroupName] = useState(group.groupName || '')
+  const [memberSearch, setMemberSearch] = useState('')
+  const [members, setMembers] = useState([]) // Array of user objects: { institutionalId, displayName, email }
+  const [searchResults, setSearchResults] = useState([])
+  const [selectedLeader, setSelectedLeader] = useState(group.leaderStudentId || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [loadingMembers, setLoadingMembers] = useState(true)
+  const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  // Fetch current group members
+  useEffect(() => {
+    const fetchGroupMembers = async () => {
+      try {
+        const response = await fetch(`http://localhost:8080/api/groups/${group.groupId}`, {
+          credentials: 'include'
+        })
+        if (response.ok) {
+          const data = await response.json()
+          const memberIds = data.members || []
+          
+          // Fetch user details for each member
+          const memberPromises = memberIds.map(async (member) => {
+            try {
+              const userResponse = await fetch(`http://localhost:8080/api/users/search?q=${encodeURIComponent(member.institutionalId)}`, {
+                credentials: 'include'
+              })
+              if (userResponse.ok) {
+                const users = await userResponse.json()
+                const user = Array.isArray(users) ? users.find(u => u.institutionalId === member.institutionalId) : null
+                return {
+                  institutionalId: member.institutionalId,
+                  displayName: user?.displayName || member.displayName || 'Unknown',
+                  email: user?.email || member.email || ''
+                }
+              }
+              return {
+                institutionalId: member.institutionalId,
+                displayName: member.displayName || 'Unknown',
+                email: member.email || ''
+              }
+            } catch (err) {
+              return {
+                institutionalId: member.institutionalId,
+                displayName: member.displayName || 'Unknown',
+                email: member.email || ''
+              }
+            }
+          })
+          
+          const fetchedMembers = await Promise.all(memberPromises)
+          setMembers(fetchedMembers)
+          setSelectedLeader(data.leader?.institutionalId || group.leaderStudentId || '')
+        }
+      } catch (err) {
+        console.error('Error fetching group members:', err)
+      } finally {
+        setLoadingMembers(false)
+      }
+    }
+    
+    fetchGroupMembers()
+  }, [group.groupId, group.leaderStudentId])
+
+  // Search for users (by name or institutional ID)
+  useEffect(() => {
+    if (memberSearch.length >= 2) {
+      const searchTimer = setTimeout(async () => {
+        try {
+          const response = await fetch(`http://localhost:8080/api/users/search?q=${encodeURIComponent(memberSearch)}`, {
+            credentials: 'include'
+          })
+          if (response.ok) {
+            const data = await response.json()
+            setSearchResults(Array.isArray(data) ? data : [])
+          }
+        } catch (err) {
+          console.error('User search error:', err)
+        }
+      }, 300)
+      return () => clearTimeout(searchTimer)
+    } else {
+      setSearchResults([])
+    }
+  }, [memberSearch])
+
+  const handleAddMember = (userToAdd) => {
+    const isAlreadyAdded = members.some(m => 
+      (m.institutionalId && userToAdd.institutionalId && m.institutionalId === userToAdd.institutionalId) ||
+      (m.id && userToAdd.id && m.id === userToAdd.id)
+    )
+    
+    if (!isAlreadyAdded) {
+      const newMember = {
+        institutionalId: userToAdd.institutionalId || userToAdd.id,
+        displayName: userToAdd.displayName,
+        email: userToAdd.email,
+        id: userToAdd.id
+      }
+      setMembers([...members, newMember])
+      
+      if (!selectedLeader) {
+        setSelectedLeader(newMember.institutionalId)
+      }
+      
+      setMemberSearch('')
+      setSearchResults([])
+    }
+  }
+
+  const handleRemoveMember = (memberToRemove) => {
+    const updatedMembers = members.filter(m => 
+      !((m.institutionalId && memberToRemove.institutionalId && m.institutionalId === memberToRemove.institutionalId) ||
+        (m.id && memberToRemove.id && m.id === memberToRemove.id))
+    )
+    setMembers(updatedMembers)
+    
+    // If removed member was the leader, select a new leader
+    if (selectedLeader === (memberToRemove.institutionalId || memberToRemove.id)) {
+      if (updatedMembers.length > 0) {
+        setSelectedLeader(updatedMembers[0].institutionalId)
+      } else {
+        setSelectedLeader('')
+      }
+    }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    
+    if (!groupName.trim()) {
+      setError('Group name is required')
+      return
+    }
+    
+    if (members.length === 0) {
+      setError('At least one member is required')
+      return
+    }
+
+    if (!selectedLeader) {
+      setError('Please select a group leader')
+      return
+    }
+
+    // Extract institutional IDs from member objects
+    const memberInstitutionalIds = members.map(m => m.institutionalId || m.id).filter(Boolean)
+    
+    // Ensure selected leader is in members list
+    if (!memberInstitutionalIds.includes(selectedLeader)) {
+      memberInstitutionalIds.unshift(selectedLeader)
+    }
+
+    setLoading(true)
+    try {
+      const response = await fetch(`http://localhost:8080/api/groups/${group.groupId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          groupName: groupName.trim(),
+          leaderStudentId: selectedLeader,
+          memberStudentIds: memberInstitutionalIds
+        })
+      })
+
+      const data = await response.json()
+      
+      if (!response.ok) {
+        setError(data.errors ? data.errors.join(', ') : (data.error || 'Failed to update group'))
+        setLoading(false)
+        return
+      }
+
+      setLoading(false)
+      onSuccess()
+    } catch (err) {
+      console.error('Update group error:', err)
+      setError('Network error: ' + err.message)
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="create-group-modal-overlay" onClick={onClose}>
+      <div className="create-group-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="create-group-modal-close" onClick={onClose}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+
+        <div className="create-group-modal-header">
+          <h2 className="create-group-modal-title">Edit Group</h2>
+          <p className="create-group-modal-subtitle">Update group information and members.</p>
+        </div>
+
+        <form className="create-group-form" onSubmit={handleSubmit}>
+          <div className="create-group-field">
+            <label className="create-group-label">Group Name *</label>
+            <input
+              type="text"
+              className="create-group-input"
+              placeholder="Enter group name"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="create-group-field">
+            <label className="create-group-label">Select Group Leader *</label>
+            {loadingMembers ? (
+              <div style={{ padding: '0.75rem', color: '#666' }}>Loading members...</div>
+            ) : members.length === 0 ? (
+              <div style={{ padding: '0.75rem', color: '#c33' }}>No members available. Add members first.</div>
+            ) : (
+              <select
+                className="create-group-input"
+                value={selectedLeader}
+                onChange={(e) => setSelectedLeader(e.target.value)}
+                required
+              >
+                <option value="">-- Select a leader --</option>
+                {members.map(member => (
+                  <option key={member.institutionalId || member.id} value={member.institutionalId || member.id}>
+                    {member.displayName} ({member.institutionalId || member.id})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div className="create-group-field">
+            <label className="create-group-label">Add Member to Group</label>
+            <div className="create-group-member-input-wrapper">
+              <svg className="create-group-search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35"/>
+              </svg>
+              <input
+                type="text"
+                className="create-group-input create-group-member-input"
+                placeholder="Search by name or ID (e.g., 22-5689-375 or John Doe)"
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+              />
+            </div>
+            {searchResults.length > 0 && (
+              <div className="create-group-search-results">
+                {searchResults.map(user => (
+                  <div
+                    key={user.institutionalId || user.id}
+                    className="create-group-search-result-item"
+                    onClick={() => handleAddMember(user)}
+                  >
+                    <div className="create-group-search-result-name">{user.displayName}</div>
+                    <div className="create-group-search-result-id">{user.institutionalId || user.id}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="create-group-field">
+            <label className="create-group-label">Group Members</label>
+            {members.length === 0 ? (
+              <div style={{ padding: '0.75rem', color: '#666', fontStyle: 'italic' }}>
+                No members added yet. Search and add members above.
+              </div>
+            ) : (
+              <div className="create-group-members-list">
+                {members.map(member => (
+                  <div key={member.institutionalId || member.id} className="create-group-member-item">
+                    <div className="create-group-member-info">
+                      <div className="create-group-member-name">{member.displayName}</div>
+                      <div className="create-group-member-id">{member.institutionalId || member.id}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="create-group-member-remove"
+                      onClick={() => handleRemoveMember(member)}
+                      title="Remove member"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="create-group-error" style={{ marginTop: '1rem', padding: '0.75rem', background: '#fee', color: '#c33', borderRadius: '4px' }}>
+              {error}
+            </div>
+          )}
+
+          <div className="create-group-form-actions">
+            <button 
+              type="button" 
+              className="create-group-delete-btn" 
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={loading || deleting}
+              style={{
+                background: '#dc3545',
+                color: 'white',
+                border: 'none',
+                padding: '0.75rem 1.5rem',
+                borderRadius: '6px',
+                cursor: loading || deleting ? 'not-allowed' : 'pointer',
+                opacity: loading || deleting ? 0.6 : 1,
+                marginRight: 'auto'
+              }}
+            >
+              {deleting ? 'Deleting...' : 'Delete Group'}
+            </button>
+            <button type="button" className="create-group-cancel-btn" onClick={onClose} disabled={loading || deleting}>
+              Cancel
+            </button>
+            <button type="submit" className="create-group-submit-btn" disabled={loading || deleting}>
+              {loading ? 'Updating...' : 'Update Group'}
+            </button>
+          </div>
+          
+          {showDeleteConfirm && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000
+            }} onClick={() => setShowDeleteConfirm(false)}>
+              <div style={{
+                background: 'white',
+                padding: '2rem',
+                borderRadius: '8px',
+                maxWidth: '400px',
+                width: '90%'
+              }} onClick={(e) => e.stopPropagation()}>
+                <h3 style={{ marginTop: 0 }}>Confirm Delete</h3>
+                <p>Are you sure you want to delete this group? This action cannot be undone.</p>
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      border: '1px solid #ddd',
+                      background: 'white',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setDeleting(true)
+                      try {
+                        const response = await fetch(`http://localhost:8080/api/groups/${group.groupId}`, {
+                          method: 'DELETE',
+                          credentials: 'include'
+                        })
+                        
+                        if (!response.ok) {
+                          const data = await response.json()
+                          setError(data.error || 'Failed to delete group')
+                          setDeleting(false)
+                          setShowDeleteConfirm(false)
+                          return
+                        }
+                        
+                        setDeleting(false)
+                        setShowDeleteConfirm(false)
+                        onSuccess()
+                      } catch (err) {
+                        console.error('Delete group error:', err)
+                        setError('Network error: ' + err.message)
+                        setDeleting(false)
+                        setShowDeleteConfirm(false)
+                      }
+                    }}
+                    disabled={deleting}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      border: 'none',
+                      background: '#dc3545',
+                      color: 'white',
+                      borderRadius: '4px',
+                      cursor: deleting ? 'not-allowed' : 'pointer',
+                      opacity: deleting ? 0.6 : 1
+                    }}
+                  >
+                    {deleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </form>
       </div>
     </div>

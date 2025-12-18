@@ -1,0 +1,48 @@
+spring.application.name=scholarsync
+app.professor.key=test
+
+# Server Configuration
+server.port=8080
+
+# Microsoft OAuth Configuration
+spring.security.oauth2.client.registration.microsoft.client-id=f7de2082-19fd-4c38-b76a-07eefc673493
+spring.security.oauth2.client.registration.microsoft.client-secret=h1w8Q~kaBgDy7_fNelA02WvZHXoyNH35Nk2YdbR1
+spring.security.oauth2.client.registration.microsoft.authorization-grant-type=authorization_code
+spring.security.oauth2.client.registration.microsoft.scope=openid,profile,email,User.Read
+spring.security.oauth2.client.registration.microsoft.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}
+spring.security.oauth2.client.registration.microsoft.client-name=Microsoft
+
+# Microsoft OAuth Provider Configuration
+# Single-tenant configuration (work/school accounts in your organization only)
+# Tenant ID: 823cde44-4433-456d-b801-bdf0ab3d41fc
+spring.security.oauth2.client.provider.microsoft.authorization-uri=https://login.microsoftonline.com/823cde44-4433-456d-b801-bdf0ab3d41fc/oauth2/v2.0/authorize
+spring.security.oauth2.client.provider.microsoft.token-uri=https://login.microsoftonline.com/823cde44-4433-456d-b801-bdf0ab3d41fc/oauth2/v2.0/token
+spring.security.oauth2.client.provider.microsoft.user-info-uri=https://graph.microsoft.com/oidc/userinfo
+spring.security.oauth2.client.provider.microsoft.user-name-attribute=email
+spring.security.oauth2.client.provider.microsoft.jwk-set-uri=https://login.microsoftonline.com/823cde44-4433-456d-b801-bdf0ab3d41fc/discovery/v2.0/keys
+
+# Database Configuration - Using MySQL for persistence
+# IMPORTANT: Make sure MySQL is running and the 'scholarsync' database exists
+# Create database: CREATE DATABASE scholarsync;
+spring.datasource.url=jdbc:mysql://localhost:3306/scholarsync?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.datasource.username=root
+spring.datasource.password=
+
+# JPA Configuration
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+# Let Hibernate auto-detect the database dialect based on the datasource
+# spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.hbm2ddl.auto=update
+spring.jpa.properties.hibernate.globally_quoted_identifiers=true
+spring.jpa.properties.hibernate.globally_quoted_identifiers_skip_column_definitions=false
+spring.jpa.properties.hibernate.jdbc.lob.non_contextual_creation=true
+spring.jpa.properties.hibernate.hbm2ddl.jdbc_metadata_extraction_strategy=individually
+spring.jpa.properties.hibernate.id.new_generator_mappings=true
+
+
+# JWT Configuration (used to sign API session tokens). Provide a BASE64-encoded key via env.
+jwt.secret=${JWT_SECRET_BASE64:REPLACE_WITH_BASE64_SECRET}
+jwt.expiration=1800000

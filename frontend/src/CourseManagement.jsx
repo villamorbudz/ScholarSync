@@ -34,9 +34,7 @@ function CreateCourseModal({ onClose, onSuccess }) {
       return
     }
 
-    // Format dates - HTML5 date input returns YYYY-MM-DD format
-    // Convert to ISO string format (without timezone for LocalDateTime)
-    // Format: "2025-01-12T00:00:00"
+  
     const startDateTime = startDate ? `${startDate}T00:00:00` : null
     
     console.log('Creating course with data:', {
@@ -75,7 +73,7 @@ function CreateCourseModal({ onClose, onSuccess }) {
       
       const data = await response.json()
 
-      // Reset form
+      
       setCourseName('')
       setCourseCode('')
       setCourseDetails('')
@@ -495,7 +493,7 @@ export default function CourseManagement() {
                       Adviser: {course.courseAdviser}
                     </p>
                   </div>
-                  <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
+                  <div style={{ position: 'absolute', bottom: '1rem', right: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
                     <button
                       className="course-edit-icon-btn"
                       onClick={(e) => handleEditClick(e, course)}

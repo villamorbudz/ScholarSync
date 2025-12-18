@@ -27,7 +27,8 @@ public class Course {
     @Column(name = "course_code", nullable = false, length = 10)
     private String courseCode;
     
-    @Column(name = "course_desc", nullable = false, columnDefinition = "TEXT")
+    @Lob
+    @Column(name = "course_desc", nullable = false)
     private String courseDesc;
     
     @Column(name = "course_dur", nullable = false)

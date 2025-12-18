@@ -33,7 +33,8 @@ public class ProjectLog {
     @Column(name = "action_type", nullable = false, length = 20)
     private String actionType; // "ADD", "UPDATE", "DELETE"
     
-    @Column(name = "action_description", nullable = false, columnDefinition = "TEXT")
+    @Lob
+    @Column(name = "action_description", nullable = false)
     private String actionDescription; // e.g., "Member_3 added a new note on Functionality#4"
     
     @Column(name = "created_at", nullable = false, updatable = false)

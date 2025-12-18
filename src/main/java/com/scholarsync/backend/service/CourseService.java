@@ -4,8 +4,11 @@ import com.scholarsync.backend.dto.CourseCreateRequest;
 import com.scholarsync.backend.model.Course;
 import com.scholarsync.backend.model.GroupEntity;
 import com.scholarsync.backend.model.User;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scholarsync.backend.repository.CourseRepository;
 import com.scholarsync.backend.repository.GroupRepository;
+import com.scholarsync.backend.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,6 +25,20 @@ public class CourseService {
     
     private final CourseRepository courseRepository;
     private final GroupRepository groupRepository;
+    private final StudentRepository studentRepository;
+    private final ObjectMapper objectMapper;
+    
+    private List<String> parseMemberIds(String json) {
+        try {
+            if (json == null || json.trim().isEmpty()) {
+                return List.of();
+            }
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("Failed to parse member IDs from JSON: {}", json, e);
+            return List.of();
+        }
+    }
     
     @Transactional
     public Course createCourse(CourseCreateRequest request, User creator) {
@@ -154,6 +171,33 @@ public class CourseService {
                 .orElseThrow(() -> new RuntimeException("Course not found"));
         
         try {
+            // Delete all groups associated with this course
+            List<GroupEntity> groups = groupRepository.findByCourseId(courseId.longValue());
+            log.info("Found {} groups to delete for course {}", groups.size(), courseId);
+            
+            for (GroupEntity group : groups) {
+                // Parse member student IDs from JSON
+                List<String> memberIds = parseMemberIds(group.getMemberStudentIds());
+                
+                // Clear group_id from student records for all members
+                for (String memberId : memberIds) {
+                    java.util.Optional<com.scholarsync.backend.model.Student> studentOpt = 
+                        studentRepository.findByStudentIdAndCourseId(memberId, courseId.longValue());
+                    if (studentOpt.isPresent()) {
+                        com.scholarsync.backend.model.Student student = studentOpt.get();
+                        if (group.getGroupId().equals(student.getGroupId())) {
+                            student.setGroupId(null);
+                            studentRepository.save(student);
+                        }
+                    }
+                }
+                
+                // Delete the group
+                groupRepository.delete(group);
+                log.info("Deleted group: {}", group.getGroupId());
+            }
+            
+            // Delete the course
             courseRepository.delete(course);
             log.info("Course deleted successfully: id={}", courseId);
         } catch (Exception e) {

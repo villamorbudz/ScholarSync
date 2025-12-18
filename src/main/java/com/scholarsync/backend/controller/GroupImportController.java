@@ -53,7 +53,8 @@ public class GroupImportController {
         if (configured != null && !configured.isEmpty() && (key == null || !configured.equals(key))) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Forbidden: missing or invalid professor key");
         }
-        List<GroupEntity> created = importService.importFromExcel(file, courseId);
+        // For Excel imports, createdBy is set to null (can be updated later if authentication is added)
+        List<GroupEntity> created = importService.importFromExcel(file, courseId, null);
         return ResponseEntity.ok(created);
     }
 
@@ -113,11 +114,15 @@ public class GroupImportController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
         }
         
+        // Get creator's institutional ID
+        String creatorInstitutionalId = currentUser.getInstitutionalId();
+        
         GroupEntity created = importService.createManualGroup(
             req.getGroupName(), 
             req.getLeaderStudentId(), 
             req.getCourseId(), 
-            req.getMemberStudentIds()
+            req.getMemberStudentIds(),
+            creatorInstitutionalId
         );
         return ResponseEntity.ok(created);
     }

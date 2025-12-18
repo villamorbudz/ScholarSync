@@ -14,8 +14,8 @@ export default function StudentLookup() {
   const [createStatus, setCreateStatus] = useState('')
   const searchTimer = useRef(null)
 
-  // Student lookup removed — the student enters their Student ID inside the Create Group modal instead.
-  // My Group will be displayed after creating a group (or if you manually fetch via the API).
+
+  
 
 
   const fetchSuggestions = async (q) => {

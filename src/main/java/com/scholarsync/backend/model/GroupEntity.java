@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 @Builder
 public class GroupEntity {
     @Id
-    @Column(name = "group_id", nullable = false, length = 255, columnDefinition = "VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+    @Column(name = "group_id", nullable = false, length = 255)
     private String groupId;
 
     @Column(name = "group_name", nullable = false)
@@ -33,6 +33,9 @@ public class GroupEntity {
 
     @Column(name = "adviser_id")
     private String adviserId;
+
+    @Column(name = "created_by")
+    private String createdBy; // Institutional ID of the user who created the group
 
     @Column(name = "created_at")
     private Instant createdAt;

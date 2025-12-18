@@ -875,7 +875,7 @@ input[type=file], input[type=number] { display:block; margin-top: .25rem }
 
 .course-edit-icon-btn {
   position: absolute;
-  top: 1rem;
+  bottom: 1rem;
   right: 1rem;
   background: white;
   border: 1px solid #e0e0e0;
@@ -900,6 +900,40 @@ input[type=file], input[type=number] { display:block; margin-top: .25rem }
 .course-edit-icon-btn svg {
   width: 18px;
   height: 18px;
+}
+
+.group-edit-icon-btn {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.group-edit-icon-btn:hover {
+  background: white;
+  border-color: #0078d4;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.group-edit-icon-btn svg {
+  width: 18px;
+  height: 18px;
+  color: #666;
+}
+
+.group-edit-icon-btn:hover svg {
+  color: #0078d4;
 }
 
 /* Create Group Modal Styles */

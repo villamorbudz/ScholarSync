@@ -2,9 +2,10 @@ package com.scholarsync.backend.service;
 
 import com.scholarsync.backend.exception.ImportValidationException;
 import com.scholarsync.backend.model.GroupEntity;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.scholarsync.backend.model.Student;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scholarsync.backend.repository.GroupRepository;
+import com.scholarsync.backend.repository.StudentRepository;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -12,6 +13,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -27,10 +29,12 @@ import org.springframework.web.multipart.MultipartFile;
 public class GroupImportService {
 
     private final GroupRepository groupRepository;
+    private final StudentRepository studentRepository;
     private final ObjectMapper objectMapper;
 
-    public GroupImportService(GroupRepository groupRepository, ObjectMapper objectMapper) {
+    public GroupImportService(GroupRepository groupRepository, StudentRepository studentRepository, ObjectMapper objectMapper) {
         this.groupRepository = groupRepository;
+        this.studentRepository = studentRepository;
         this.objectMapper = objectMapper;
     }
     
@@ -60,7 +64,7 @@ public class GroupImportService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public List<GroupEntity> importFromExcel(MultipartFile file, Long courseId) {
+    public List<GroupEntity> importFromExcel(MultipartFile file, Long courseId, String createdBy) {
         try (InputStream is = file.getInputStream(); Workbook wb = WorkbookFactory.create(is)) {
             Sheet sheet = wb.getSheetAt(0);
             Map<String, List<RowRecord>> teams = new HashMap<>();
@@ -138,6 +142,7 @@ public class GroupImportService {
                     .leaderStudentId(leaderId)
                     .memberStudentIds(membersJson)
                     .adviserId(null)
+                    .createdBy(createdBy)
                     .createdAt(Instant.now())
                     .build();
                 groupRepository.save(g);
@@ -153,7 +158,7 @@ public class GroupImportService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public GroupEntity createManualGroup(String groupName, String leaderStudentId, Long courseId, List<String> memberStudentIds) {
+    public GroupEntity createManualGroup(String groupName, String leaderStudentId, Long courseId, List<String> memberStudentIds, String createdBy) {
         List<String> errors = new ArrayList<>();
         if (groupName == null || groupName.isEmpty()) {
             errors.add("GROUP NAME: cannot be empty");
@@ -194,7 +199,7 @@ public class GroupImportService {
 
         if (!errors.isEmpty()) throw new ImportValidationException(errors);
 
-        // Create group - only using groups table
+        // Create group
         String gid = UUID.randomUUID().toString();
         String membersJson = listToJson(memberStudentIds);
         GroupEntity g = GroupEntity.builder()
@@ -204,9 +209,116 @@ public class GroupImportService {
             .leaderStudentId(leaderStudentId)
             .memberStudentIds(membersJson)
             .adviserId(null)
+            .createdBy(createdBy)
             .createdAt(Instant.now())
             .build();
         groupRepository.save(g);
+        
+        // Update student records to set group_id for all members
+        for (String studentId : memberStudentIds) {
+            Optional<Student> studentOpt = studentRepository.findByStudentIdAndCourseId(studentId, courseId);
+            if (studentOpt.isPresent()) {
+                Student student = studentOpt.get();
+                student.setGroupId(gid);
+                studentRepository.save(student);
+            }
+        }
+        
         return g;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public GroupEntity updateGroup(String groupId, String groupName, String leaderStudentId, List<String> memberStudentIds) {
+        GroupEntity group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("Group not found"));
+        
+        List<String> errors = new ArrayList<>();
+        
+        // Validate inputs
+        if (groupName != null && groupName.isEmpty()) {
+            errors.add("GROUP NAME: cannot be empty");
+        }
+        if (leaderStudentId != null && leaderStudentId.isEmpty()) {
+            errors.add("LEADER STUDENT ID: cannot be empty");
+        }
+        if (memberStudentIds != null && memberStudentIds.isEmpty()) {
+            errors.add("No members specified");
+        }
+        
+        // Ensure leader is part of members if memberStudentIds is provided
+        if (memberStudentIds != null) {
+            if (!memberStudentIds.contains(leaderStudentId != null ? leaderStudentId : group.getLeaderStudentId())) {
+                String finalLeaderId = leaderStudentId != null ? leaderStudentId : group.getLeaderStudentId();
+                memberStudentIds = new ArrayList<>(memberStudentIds);
+                memberStudentIds.add(0, finalLeaderId);
+            }
+            
+            // Check for duplicate student IDs
+            Set<String> seen = new HashSet<>();
+            for (String sid : memberStudentIds) {
+                if (!seen.add(sid)) {
+                    errors.add(String.format("Duplicate STUDENT ID %s", sid));
+                }
+            }
+            
+            // Check if any student is already in another group for this course
+            List<GroupEntity> existingGroups = groupRepository.findByCourseId(group.getCourseId());
+            for (GroupEntity existingGroup : existingGroups) {
+                if (existingGroup.getGroupId().equals(groupId)) continue; // Skip current group
+                List<String> existingMembers = jsonToList(existingGroup.getMemberStudentIds());
+                for (String memberId : memberStudentIds) {
+                    if (existingMembers.contains(memberId)) {
+                        errors.add(String.format("STUDENT ID=%s already assigned to group %s", 
+                                memberId, existingGroup.getGroupName()));
+                    }
+                }
+            }
+        }
+        
+        if (!errors.isEmpty()) throw new ImportValidationException(errors);
+        
+        // Update group fields
+        if (groupName != null) {
+            group.setGroupName(groupName);
+        }
+        if (leaderStudentId != null) {
+            group.setLeaderStudentId(leaderStudentId);
+        }
+        if (memberStudentIds != null) {
+            // Get old members BEFORE updating the group
+            List<String> oldMemberIds = jsonToList(group.getMemberStudentIds());
+            Long courseId = group.getCourseId();
+            
+            // Update the group's member list
+            String membersJson = listToJson(memberStudentIds);
+            group.setMemberStudentIds(membersJson);
+            
+            // Remove group_id from students no longer in group
+            for (String oldMemberId : oldMemberIds) {
+                if (!memberStudentIds.contains(oldMemberId)) {
+                    Optional<Student> studentOpt = studentRepository.findByStudentIdAndCourseId(oldMemberId, courseId);
+                    if (studentOpt.isPresent()) {
+                        Student student = studentOpt.get();
+                        if (groupId.equals(student.getGroupId())) {
+                            student.setGroupId(null);
+                            studentRepository.save(student);
+                        }
+                    }
+                }
+            }
+            
+            // Update group_id for all new/remaining members
+            for (String studentId : memberStudentIds) {
+                Optional<Student> studentOpt = studentRepository.findByStudentIdAndCourseId(studentId, courseId);
+                if (studentOpt.isPresent()) {
+                    Student student = studentOpt.get();
+                    student.setGroupId(groupId);
+                    studentRepository.save(student);
+                }
+            }
+        }
+        
+        groupRepository.save(group);
+        return group;
     }
 }
