@@ -117,12 +117,22 @@ public class GroupImportController {
         // Get creator's institutional ID
         String creatorInstitutionalId = currentUser.getInstitutionalId();
         
+        // For students creating groups, allowLeaderEdit is always true (they created it)
+        // For teachers, use the value from request (defaults to false if not provided)
+        Boolean allowLeaderEdit = null;
+        if (currentUser.getRole() == Role.STUDENT) {
+            allowLeaderEdit = true; // Students who create groups can always edit
+        } else if (currentUser.getRole() == Role.TEACHER) {
+            allowLeaderEdit = req.getAllowLeaderEdit() != null ? req.getAllowLeaderEdit() : false;
+        }
+        
         GroupEntity created = importService.createManualGroup(
             req.getGroupName(), 
             req.getLeaderStudentId(), 
             req.getCourseId(), 
             req.getMemberStudentIds(),
-            creatorInstitutionalId
+            creatorInstitutionalId,
+            allowLeaderEdit
         );
         return ResponseEntity.ok(created);
     }

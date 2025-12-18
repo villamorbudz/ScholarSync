@@ -37,6 +37,9 @@ public class GroupEntity {
     @Column(name = "created_by")
     private String createdBy; // Institutional ID of the user who created the group
 
+    @Column(name = "allow_leader_edit")
+    private Boolean allowLeaderEdit; // If true, student leader can edit the group (only applies when created by teacher)
+
     @Column(name = "created_at")
     private Instant createdAt;
 }

@@ -158,7 +158,7 @@ public class GroupImportService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public GroupEntity createManualGroup(String groupName, String leaderStudentId, Long courseId, List<String> memberStudentIds, String createdBy) {
+    public GroupEntity createManualGroup(String groupName, String leaderStudentId, Long courseId, List<String> memberStudentIds, String createdBy, Boolean allowLeaderEdit) {
         List<String> errors = new ArrayList<>();
         if (groupName == null || groupName.isEmpty()) {
             errors.add("GROUP NAME: cannot be empty");
@@ -210,6 +210,7 @@ public class GroupImportService {
             .memberStudentIds(membersJson)
             .adviserId(null)
             .createdBy(createdBy)
+            .allowLeaderEdit(allowLeaderEdit != null ? allowLeaderEdit : false) // Default to false if not specified
             .createdAt(Instant.now())
             .build();
         groupRepository.save(g);

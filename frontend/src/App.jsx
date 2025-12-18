@@ -539,7 +539,9 @@ function Dashboard() {
               members: memberCount,
               leaderStudentId: group.leaderStudentId,
               memberStudentIds: group.memberStudentIds,
-              createdBy: group.createdBy || null
+              createdBy: group.createdBy || null,
+              allowLeaderEdit: group.allowLeaderEdit || false,
+              courseId: group.courseId || null
             }
           } catch (err) {
             console.error(`Error enriching group ${group.groupId}:`, err)
@@ -552,7 +554,9 @@ function Dashboard() {
               members: 1,
               leaderStudentId: group.leaderStudentId,
               memberStudentIds: group.memberStudentIds,
-              createdBy: group.createdBy || null
+              createdBy: group.createdBy || null,
+              allowLeaderEdit: group.allowLeaderEdit || false,
+              courseId: group.courseId || null
             }
           }
         })
@@ -853,38 +857,47 @@ function Dashboard() {
                     No groups created yet.
                   </div>
                 ) : (
-                  createdGroups.map(group => (
-                    <div 
-                      key={group.id} 
-                      className="dashboard-group-card"
-                      style={{ cursor: 'pointer', position: 'relative' }}
-                      onClick={() => navigate(`/groups/${group.groupId}`)}
-                    >
-                      {user && user.role === 'TEACHER' && (
-                        <button
-                          className="group-edit-icon-btn"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setEditingGroup(group)
-                          }}
-                          title="Edit group"
-                        >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                          </svg>
-                        </button>
-                      )}
-                      <div className="dashboard-group-card-content">
-                        <div className="dashboard-group-name">{group.groupName}</div>
-                        <div className="dashboard-group-subject">{group.subjectCode}</div>
-                        <div className="dashboard-group-adviser">Adviser: {group.adviser}</div>
+                  createdGroups.map(group => {
+                    // Check if current user can edit this group
+                    const canEdit = user && (
+                      user.role === 'TEACHER' || 
+                      (user.role === 'STUDENT' && group.createdBy === user.institutionalId) ||
+                      (user.role === 'STUDENT' && group.leaderStudentId === user.institutionalId && group.allowLeaderEdit)
+                    )
+                    
+                    return (
+                      <div 
+                        key={group.id} 
+                        className="dashboard-group-card"
+                        style={{ cursor: 'pointer', position: 'relative' }}
+                        onClick={() => navigate(`/groups/${group.groupId}`)}
+                      >
+                        {canEdit && (
+                          <button
+                            className="group-edit-icon-btn"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingGroup(group)
+                            }}
+                            title="Edit group"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                          </button>
+                        )}
+                        <div className="dashboard-group-card-content">
+                          <div className="dashboard-group-name">{group.groupName}</div>
+                          <div className="dashboard-group-subject">{group.subjectCode}</div>
+                          <div className="dashboard-group-adviser">Adviser: {group.adviser}</div>
+                        </div>
+                        <div className="dashboard-group-badge dashboard-group-badge-blue">
+                          {group.members} members
+                        </div>
                       </div>
-                      <div className="dashboard-group-badge dashboard-group-badge-blue">
-                        {group.members} members
-                      </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </div>
@@ -897,38 +910,47 @@ function Dashboard() {
                     No assigned groups yet.
                   </div>
                 ) : (
-                  assignedGroups.map(group => (
-                    <div 
-                      key={group.id} 
-                      className="dashboard-group-card"
-                      style={{ cursor: 'pointer', position: 'relative' }}
-                      onClick={() => navigate(`/groups/${group.groupId}`)}
-                    >
-                      {user && user.role === 'TEACHER' && (
-                        <button
-                          className="group-edit-icon-btn"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setEditingGroup(group)
-                          }}
-                          title="Edit group"
-                        >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                          </svg>
-                        </button>
-                      )}
-                      <div className="dashboard-group-card-content">
-                        <div className="dashboard-group-name">{group.groupName}</div>
-                        <div className="dashboard-group-subject">{group.subjectCode}</div>
-                        <div className="dashboard-group-adviser">Adviser: {group.adviser}</div>
+                  assignedGroups.map(group => {
+                    // Check if current user can edit this group
+                    const canEdit = user && (
+                      user.role === 'TEACHER' || 
+                      (user.role === 'STUDENT' && group.createdBy === user.institutionalId) ||
+                      (user.role === 'STUDENT' && group.leaderStudentId === user.institutionalId && group.allowLeaderEdit)
+                    )
+                    
+                    return (
+                      <div 
+                        key={group.id} 
+                        className="dashboard-group-card"
+                        style={{ cursor: 'pointer', position: 'relative' }}
+                        onClick={() => navigate(`/groups/${group.groupId}`)}
+                      >
+                        {canEdit && (
+                          <button
+                            className="group-edit-icon-btn"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingGroup(group)
+                            }}
+                            title="Edit group"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                          </button>
+                        )}
+                        <div className="dashboard-group-card-content">
+                          <div className="dashboard-group-name">{group.groupName}</div>
+                          <div className="dashboard-group-subject">{group.subjectCode}</div>
+                          <div className="dashboard-group-adviser">Adviser: {group.adviser}</div>
+                        </div>
+                        <div className="dashboard-group-badge dashboard-group-badge-pink">
+                          {group.members} members
+                        </div>
                       </div>
-                      <div className="dashboard-group-badge dashboard-group-badge-pink">
-                        {group.members} members
-                      </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </div>
@@ -973,6 +995,7 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
   const [selectedLeader, setSelectedLeader] = useState('') // Selected leader institutional ID
   const [courseId, setCourseId] = useState('') // Selected course ID
   const [courses, setCourses] = useState([]) // Available courses
+  const [allowLeaderEdit, setAllowLeaderEdit] = useState(false) // Toggle for allowing student leader to edit (teachers only)
   const [loading, setLoading] = useState(false)
   const [loadingCourses, setLoadingCourses] = useState(true)
   const [error, setError] = useState('')
@@ -1023,11 +1046,24 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
   }, [isStudent, isTeacher])
 
   // Search for users (by name or institutional ID)
+  // For teachers: only search students enrolled in the selected course
   useEffect(() => {
     if (memberSearch.length >= 2) {
+      // For teachers, only search if a course is selected
+      if (isTeacher && !courseId) {
+        setSearchResults([])
+        return
+      }
+      
       const searchTimer = setTimeout(async () => {
         try {
-          const response = await fetch(`http://localhost:8080/api/users/search?q=${encodeURIComponent(memberSearch)}`, {
+          // Build search URL with optional courseId parameter
+          let searchUrl = `http://localhost:8080/api/users/search?q=${encodeURIComponent(memberSearch)}`
+          if (isTeacher && courseId) {
+            searchUrl += `&courseId=${encodeURIComponent(courseId)}`
+          }
+          
+          const response = await fetch(searchUrl, {
             credentials: 'include'
           })
           if (response.ok) {
@@ -1042,7 +1078,7 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
     } else {
       setSearchResults([])
     }
-  }, [memberSearch])
+  }, [memberSearch, courseId, isTeacher])
 
   const handleAddMember = (userToAdd) => {
     // Check if user is already in members list
@@ -1144,18 +1180,25 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
 
     setLoading(true)
     try {
+      const requestBody = {
+        groupName: groupName.trim(),
+        leaderStudentId: leaderStudentId,
+        courseId: parseInt(courseId),
+        memberStudentIds: memberInstitutionalIds
+      }
+      
+      // Only include allowLeaderEdit for teachers (students always get edit permission)
+      if (isTeacher) {
+        requestBody.allowLeaderEdit = allowLeaderEdit
+      }
+      
       const response = await fetch('http://localhost:8080/api/groups/manual', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({
-          groupName: groupName.trim(),
-          leaderStudentId: leaderStudentId,
-          courseId: parseInt(courseId),
-          memberStudentIds: memberInstitutionalIds
-        })
+        body: JSON.stringify(requestBody)
       })
 
       const data = await response.json()
@@ -1185,6 +1228,7 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
       setMembers([])
       setSearchResults([])
       setSelectedLeader('')
+      setAllowLeaderEdit(false)
       setCourseId(courses.length > 0 ? courses[0].courseId.toString() : '')
       setError('')
     } catch (err) {
@@ -1260,6 +1304,11 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
 
           <div className="create-group-field">
             <label className="create-group-label">Add Member to Group</label>
+            {isTeacher && !courseId && (
+              <div style={{ padding: '0.5rem', marginBottom: '0.5rem', background: '#fff3cd', color: '#856404', borderRadius: '4px', fontSize: '13px' }}>
+                ⚠️ Please select a course first to search for enrolled students.
+              </div>
+            )}
             <div className="create-group-member-input-wrapper">
               <svg className="create-group-search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="11" cy="11" r="8"/>
@@ -1268,11 +1317,18 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
               <input
                 type="text"
                 className="create-group-input create-group-member-input"
-                placeholder="Search by name or ID (e.g., 22-5689-375 or John Doe)"
+                placeholder={isTeacher && !courseId ? "Select a course first to search students" : "Search by name or ID (e.g., 22-5689-375 or John Doe)"}
                 value={memberSearch}
                 onChange={(e) => setMemberSearch(e.target.value)}
+                disabled={isTeacher && !courseId}
               />
             </div>
+            
+            {isTeacher && courseId && memberSearch.length >= 2 && searchResults.length === 0 && (
+              <div style={{ padding: '0.5rem', marginTop: '0.5rem', color: '#666', fontSize: '13px', fontStyle: 'italic' }}>
+                No enrolled students found matching "{memberSearch}"
+              </div>
+            )}
             
             {searchResults.length > 0 && (
               <div className="create-group-search-results">
@@ -1352,6 +1408,24 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
               </select>
             </div>
           )}
+          
+          {/* Allow Leader Edit Toggle (only for TEACHER role) */}
+          {isTeacher && (
+            <div className="create-group-field">
+              <label className="create-group-label" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={allowLeaderEdit}
+                  onChange={(e) => setAllowLeaderEdit(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <span>Allow student leader to edit this group</span>
+              </label>
+              <p style={{ marginTop: '0.25rem', fontSize: '13px', color: '#666', marginLeft: '1.75rem' }}>
+                When enabled, the selected student leader will be able to edit group information and manage members.
+              </p>
+            </div>
+          )}
 
           {/* Info message for STUDENT role */}
           {isStudent && members.length > 0 && (
@@ -1386,7 +1460,13 @@ function CreateGroupModal({ user, onClose, onSuccess }) {
   )
 }
 
-function EditGroupModal({ group, user, onClose, onSuccess }) {
+export function EditGroupModal({ group, user, onClose, onSuccess }) {
+  // Safety check - ensure group exists
+  if (!group || !group.groupId) {
+    console.error('EditGroupModal: group is missing or invalid', group)
+    return null
+  }
+
   const [groupName, setGroupName] = useState(group.groupName || '')
   const [memberSearch, setMemberSearch] = useState('')
   const [members, setMembers] = useState([]) // Array of user objects: { institutionalId, displayName, email }
@@ -1397,6 +1477,10 @@ function EditGroupModal({ group, user, onClose, onSuccess }) {
   const [loadingMembers, setLoadingMembers] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  
+  // Determine if user is a teacher or student
+  const isTeacher = user && user.role === 'TEACHER'
+  const isStudent = user && user.role === 'STUDENT'
 
   // Fetch current group members
   useEffect(() => {
@@ -1441,28 +1525,44 @@ function EditGroupModal({ group, user, onClose, onSuccess }) {
           const fetchedMembers = await Promise.all(memberPromises)
           setMembers(fetchedMembers)
           setSelectedLeader(data.leader?.institutionalId || group.leaderStudentId || '')
+        } else {
+          console.error('Failed to fetch group details:', response.status)
+          setError('Failed to load group details')
         }
       } catch (err) {
         console.error('Error fetching group members:', err)
+        setError('Failed to load group members. Please try again.')
       } finally {
         setLoadingMembers(false)
       }
     }
     
-    fetchGroupMembers()
-  }, [group.groupId, group.leaderStudentId])
+    if (group && group.groupId) {
+      fetchGroupMembers()
+    }
+  }, [group?.groupId, group?.leaderStudentId])
 
   // Search for users (by name or institutional ID)
+  // For teachers: only search students enrolled in the group's course
+  // For students: search all users (they can add any student)
   useEffect(() => {
     if (memberSearch.length >= 2) {
       const searchTimer = setTimeout(async () => {
         try {
-          const response = await fetch(`http://localhost:8080/api/users/search?q=${encodeURIComponent(memberSearch)}`, {
+          // Build search URL with courseId parameter for teachers only
+          let searchUrl = `http://localhost:8080/api/users/search?q=${encodeURIComponent(memberSearch)}`
+          if (isTeacher && group?.courseId) {
+            searchUrl += `&courseId=${encodeURIComponent(group.courseId)}`
+          }
+          
+          const response = await fetch(searchUrl, {
             credentials: 'include'
           })
           if (response.ok) {
             const data = await response.json()
-            setSearchResults(Array.isArray(data) ? data : [])
+            // Filter to only show students
+            const students = Array.isArray(data) ? data.filter(u => u.role === 'STUDENT' || !u.role) : []
+            setSearchResults(students)
           }
         } catch (err) {
           console.error('User search error:', err)
@@ -1472,7 +1572,7 @@ function EditGroupModal({ group, user, onClose, onSuccess }) {
     } else {
       setSearchResults([])
     }
-  }, [memberSearch])
+  }, [memberSearch, group?.courseId, user, isTeacher])
 
   const handleAddMember = (userToAdd) => {
     const isAlreadyAdded = members.some(m => 
@@ -1529,9 +1629,23 @@ function EditGroupModal({ group, user, onClose, onSuccess }) {
       return
     }
 
-    if (!selectedLeader) {
-      setError('Please select a group leader')
-      return
+    // For students, they are always the leader
+    if (isStudent) {
+      if (!user?.institutionalId) {
+        setError('Unable to determine your institutional ID')
+        return
+      }
+      // Ensure student is in members list and is the leader
+      if (!members.some(m => (m.institutionalId || m.id) === user.institutionalId)) {
+        setError('You must be a member of the group')
+        return
+      }
+      setSelectedLeader(user.institutionalId)
+    } else if (isTeacher) {
+      if (!selectedLeader) {
+        setError('Please select a group leader')
+        return
+      }
     }
 
     // Extract institutional IDs from member objects
@@ -1602,31 +1716,49 @@ function EditGroupModal({ group, user, onClose, onSuccess }) {
             />
           </div>
 
-          <div className="create-group-field">
-            <label className="create-group-label">Select Group Leader *</label>
-            {loadingMembers ? (
-              <div style={{ padding: '0.75rem', color: '#666' }}>Loading members...</div>
-            ) : members.length === 0 ? (
-              <div style={{ padding: '0.75rem', color: '#c33' }}>No members available. Add members first.</div>
-            ) : (
-              <select
-                className="create-group-input"
-                value={selectedLeader}
-                onChange={(e) => setSelectedLeader(e.target.value)}
-                required
-              >
-                <option value="">-- Select a leader --</option>
-                {members.map(member => (
-                  <option key={member.institutionalId || member.id} value={member.institutionalId || member.id}>
-                    {member.displayName} ({member.institutionalId || member.id})
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+          {isTeacher && (
+            <div className="create-group-field">
+              <label className="create-group-label">Select Group Leader *</label>
+              {members.length === 0 ? (
+                <div style={{ padding: '0.75rem', color: '#c33' }}>No members available. Add members first.</div>
+              ) : (
+                <select
+                  className="create-group-input"
+                  value={selectedLeader}
+                  onChange={(e) => setSelectedLeader(e.target.value)}
+                  required
+                >
+                  <option value="">-- Select a leader --</option>
+                  {members.map(member => (
+                    <option key={member.institutionalId || member.id} value={member.institutionalId || member.id}>
+                      {member.displayName} ({member.institutionalId || member.id})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          
+          {isStudent && (
+            <div style={{ 
+              padding: '12px', 
+              backgroundColor: '#e8f0fe', 
+              borderRadius: '8px', 
+              fontSize: '14px', 
+              color: '#1e4487',
+              marginBottom: '1rem'
+            }}>
+              ℹ️ You are the group leader. You can update the group name and manage members.
+            </div>
+          )}
 
           <div className="create-group-field">
             <label className="create-group-label">Add Member to Group</label>
+            {user && user.role === 'TEACHER' && (
+              <div style={{ padding: '0.5rem', marginBottom: '0.5rem', background: '#e7f3ff', color: '#0066cc', borderRadius: '4px', fontSize: '13px' }}>
+                ℹ️ Only students enrolled in this course will appear in search results.
+              </div>
+            )}
             <div className="create-group-member-input-wrapper">
               <svg className="create-group-search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="11" cy="11" r="8"/>
@@ -1640,6 +1772,16 @@ function EditGroupModal({ group, user, onClose, onSuccess }) {
                 onChange={(e) => setMemberSearch(e.target.value)}
               />
             </div>
+            {isTeacher && memberSearch.length >= 2 && searchResults.length === 0 && (
+              <div style={{ padding: '0.5rem', marginTop: '0.5rem', color: '#666', fontSize: '13px', fontStyle: 'italic' }}>
+                No enrolled students found matching "{memberSearch}"
+              </div>
+            )}
+            {isStudent && memberSearch.length >= 2 && searchResults.length === 0 && (
+              <div style={{ padding: '0.5rem', marginTop: '0.5rem', color: '#666', fontSize: '13px', fontStyle: 'italic' }}>
+                No students found matching "{memberSearch}"
+              </div>
+            )}
             {searchResults.length > 0 && (
               <div className="create-group-search-results">
                 {searchResults.map(user => (

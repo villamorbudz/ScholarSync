@@ -122,10 +122,34 @@ public class GroupController {
         User currentUser = userService.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
-        // Only teachers can edit groups
-        if (currentUser.getRole() != com.scholarsync.backend.model.Role.TEACHER) {
+        GroupEntity group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("Group not found"));
+        
+        String userInstitutionalId = currentUser.getInstitutionalId();
+        boolean canEdit = false;
+        
+        // Check if user can edit:
+        // 1. Teachers can always edit
+        // 2. Students can edit if they created the group
+        // 3. Students can edit if they are the leader AND allowLeaderEdit is true
+        if (currentUser.getRole() == com.scholarsync.backend.model.Role.TEACHER) {
+            canEdit = true;
+        } else if (currentUser.getRole() == com.scholarsync.backend.model.Role.STUDENT) {
+            // Check if student created the group
+            boolean isCreator = group.getCreatedBy() != null && 
+                               group.getCreatedBy().equals(userInstitutionalId);
+            
+            // Check if student is the leader and leader edit is allowed
+            boolean isLeaderWithPermission = group.getLeaderStudentId() != null &&
+                                            group.getLeaderStudentId().equals(userInstitutionalId) &&
+                                            Boolean.TRUE.equals(group.getAllowLeaderEdit());
+            
+            canEdit = isCreator || isLeaderWithPermission;
+        }
+        
+        if (!canEdit) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
-                    .body(Map.of("error", "Only teachers can edit groups"));
+                    .body(Map.of("error", "You do not have permission to edit this group"));
         }
         
         try {
@@ -166,16 +190,29 @@ public class GroupController {
         User currentUser = userService.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
-        // Only teachers can delete groups
-        if (currentUser.getRole() != com.scholarsync.backend.model.Role.TEACHER) {
+        GroupEntity group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("Group not found"));
+        
+        String userInstitutionalId = currentUser.getInstitutionalId();
+        boolean canDelete = false;
+        
+        // Check if user can delete:
+        // 1. Teachers can always delete
+        // 2. Students can delete if they created the group
+        if (currentUser.getRole() == com.scholarsync.backend.model.Role.TEACHER) {
+            canDelete = true;
+        } else if (currentUser.getRole() == com.scholarsync.backend.model.Role.STUDENT) {
+            // Students can only delete groups they created
+            canDelete = group.getCreatedBy() != null && 
+                       group.getCreatedBy().equals(userInstitutionalId);
+        }
+        
+        if (!canDelete) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
-                    .body(Map.of("error", "Only teachers can delete groups"));
+                    .body(Map.of("error", "You do not have permission to delete this group"));
         }
         
         try {
-            GroupEntity group = groupRepository.findById(groupId)
-                    .orElseThrow(() -> new RuntimeException("Group not found"));
-            
             // Clear group_id from student records
             List<String> memberIds = jsonToList(group.getMemberStudentIds());
             Long courseId = group.getCourseId();

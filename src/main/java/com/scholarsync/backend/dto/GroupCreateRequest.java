@@ -13,4 +13,5 @@ public class GroupCreateRequest {
     private String leaderStudentId;
     private Long courseId;
     private List<String> memberStudentIds;
+    private Boolean allowLeaderEdit; // If true, student leader can edit the group (only applies when created by teacher)
 }

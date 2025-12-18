@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { EditGroupModal } from './App'
 
 export default function CourseDetail({ user }) {
   const { courseId } = useParams()
@@ -14,11 +15,53 @@ export default function CourseDetail({ user }) {
   const [addStudentError, setAddStudentError] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const studentsPerPage = 6
+  const [editingGroup, setEditingGroup] = useState(null)
+  const [deletingGroupId, setDeletingGroupId] = useState(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [studentSearchResults, setStudentSearchResults] = useState([])
+  const [searchingStudents, setSearchingStudents] = useState(false)
 
   useEffect(() => {
     fetchCourseDetails()
     fetchStudents()
   }, [courseId])
+
+  // Search for students as teacher types
+  useEffect(() => {
+    if (studentIdInput.length >= 2) {
+      const searchTimer = setTimeout(async () => {
+        setSearchingStudents(true)
+        try {
+          const response = await fetch(`http://localhost:8080/api/users/search?q=${encodeURIComponent(studentIdInput)}`, {
+            credentials: 'include'
+          })
+          if (response.ok) {
+            const data = await response.json()
+            // Filter to only show students (not teachers)
+            const students = Array.isArray(data) ? data.filter(user => user.role === 'STUDENT' || !user.role) : []
+            setStudentSearchResults(students)
+          } else {
+            setStudentSearchResults([])
+          }
+        } catch (err) {
+          console.error('Student search error:', err)
+          setStudentSearchResults([])
+        } finally {
+          setSearchingStudents(false)
+        }
+      }, 300)
+      return () => clearTimeout(searchTimer)
+    } else {
+      setStudentSearchResults([])
+    }
+  }, [studentIdInput])
+
+  const handleSelectStudent = (student) => {
+    setStudentIdInput(student.institutionalId || student.id || '')
+    setStudentSearchResults([])
+  }
 
   const fetchCourseDetails = async () => {
     try {
@@ -112,6 +155,7 @@ export default function CourseDetail({ user }) {
 
       // Success - refresh students list and close modal
       setStudentIdInput('')
+      setStudentSearchResults([])
       setShowAddStudentModal(false)
       fetchStudents()
       fetchGroups() // Refresh groups in case student was added to a group
@@ -139,6 +183,45 @@ export default function CourseDetail({ user }) {
   const getGroupInitial = (groupName) => {
     if (!groupName) return 'G'
     return groupName.charAt(0).toUpperCase()
+  }
+
+  const handleDeleteGroup = async () => {
+    if (!deletingGroupId) return
+    
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      const response = await fetch(`http://localhost:8080/api/groups/${deletingGroupId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to delete group' }))
+        setDeleteError(errorData.error || 'Failed to delete group')
+        setDeleting(false)
+        return
+      }
+      
+      // Refresh groups list
+      await fetchGroups()
+      setDeletingGroupId(null)
+      setShowDeleteConfirm(false)
+      setDeleting(false)
+    } catch (err) {
+      console.error('Delete group error:', err)
+      setDeleteError('Network error: ' + err.message)
+      setDeleting(false)
+    }
+  }
+
+  const handleEditGroup = (group) => {
+    // Enrich group with courseId for EditGroupModal
+    const enrichedGroup = {
+      ...group,
+      courseId: courseId ? parseInt(courseId) : null
+    }
+    setEditingGroup(enrichedGroup)
   }
 
   const totalPages = Math.ceil(students.length / studentsPerPage)
@@ -289,23 +372,120 @@ export default function CourseDetail({ user }) {
                   setShowAddStudentModal(false)
                   setStudentIdInput('')
                   setAddStudentError('')
+                  setStudentSearchResults([])
                 }}
               >
                 ×
               </button>
             </div>
             <form onSubmit={handleAddStudent} className="course-detail-modal-form">
-              <div className="course-detail-modal-field">
-                <label htmlFor="studentId">Student ID Number</label>
+              <div className="course-detail-modal-field" style={{ position: 'relative' }}>
+                <label htmlFor="studentId">Student ID Number or Name</label>
                 <input
                   id="studentId"
                   type="text"
                   value={studentIdInput}
                   onChange={(e) => setStudentIdInput(e.target.value)}
-                  placeholder="Enter student ID number"
+                  placeholder="Search by student ID or name"
                   disabled={addingStudent}
                   autoFocus
                 />
+                {searchingStudents && (
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '100%', 
+                    left: 0, 
+                    right: 0, 
+                    background: '#f8f9fa', 
+                    padding: '0.5rem',
+                    fontSize: '13px',
+                    color: '#666',
+                    zIndex: 1000
+                  }}>
+                    Searching...
+                  </div>
+                )}
+                {studentSearchResults.length > 0 && !searchingStudents && (
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '100%', 
+                    left: 0, 
+                    right: 0, 
+                    background: 'white', 
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    marginTop: '4px',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    zIndex: 1000
+                  }}>
+                    {studentSearchResults.map((student, idx) => (
+                      <div
+                        key={student.id || student.institutionalId || idx}
+                        onClick={() => handleSelectStudent(student)}
+                        style={{
+                          padding: '12px',
+                          cursor: 'pointer',
+                          borderBottom: idx < studentSearchResults.length - 1 ? '1px solid #eee' : 'none',
+                          transition: 'background-color 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = '#f0f0f0'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '50%',
+                            background: '#1e4487',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 'bold',
+                            fontSize: '16px',
+                            flexShrink: 0
+                          }}>
+                            {student.displayName ? student.displayName.charAt(0).toUpperCase() : 
+                             student.institutionalId ? student.institutionalId.charAt(0).toUpperCase() : 'S'}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: '600', color: '#333', marginBottom: '2px' }}>
+                              {student.displayName || 'Unknown Student'}
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#666' }}>
+                              ID: {student.institutionalId || 'N/A'}
+                            </div>
+                            {student.email && (
+                              <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
+                                {student.email}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {studentIdInput.length >= 2 && studentSearchResults.length === 0 && !searchingStudents && (
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '100%', 
+                    left: 0, 
+                    right: 0, 
+                    background: '#fff3cd', 
+                    border: '1px solid #ffc107',
+                    borderRadius: '4px',
+                    marginTop: '4px',
+                    padding: '8px',
+                    fontSize: '13px',
+                    color: '#856404',
+                    zIndex: 1000
+                  }}>
+                    No students found matching "{studentIdInput}"
+                  </div>
+                )}
               </div>
               {addStudentError && (
                 <div className="course-detail-modal-error">{addStudentError}</div>
@@ -317,6 +497,7 @@ export default function CourseDetail({ user }) {
                     setShowAddStudentModal(false)
                     setStudentIdInput('')
                     setAddStudentError('')
+                    setStudentSearchResults([])
                   }}
                   className="course-detail-modal-cancel"
                   disabled={addingStudent}
@@ -365,6 +546,77 @@ export default function CourseDetail({ user }) {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && deletingGroupId && (
+        <div className="course-detail-modal-overlay" onClick={() => {
+          setShowDeleteConfirm(false)
+          setDeletingGroupId(null)
+          setDeleteError('')
+        }}>
+          <div className="course-detail-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="course-detail-modal-header">
+              <h3>Delete Group</h3>
+              <button 
+                className="course-detail-modal-close"
+                onClick={() => {
+                  setShowDeleteConfirm(false)
+                  setDeletingGroupId(null)
+                  setDeleteError('')
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: '1rem' }}>
+              <p style={{ marginBottom: '1rem', color: '#c33' }}>
+                Are you sure you want to delete this group? This action cannot be undone and will remove the group for all students and teachers.
+              </p>
+              {deleteError && (
+                <div className="course-detail-modal-error" style={{ marginBottom: '1rem' }}>{deleteError}</div>
+              )}
+              <div className="course-detail-modal-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setDeletingGroupId(null)
+                    setDeleteError('')
+                  }}
+                  className="course-detail-modal-cancel"
+                  disabled={deleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteGroup}
+                  className="course-detail-modal-submit"
+                  disabled={deleting}
+                  style={{ background: '#dc3545' }}
+                >
+                  {deleting ? 'Deleting...' : 'Delete Group'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Group Modal */}
+      {editingGroup && (
+        <EditGroupModal
+          group={editingGroup}
+          user={user}
+          onClose={() => {
+            setEditingGroup(null)
+          }}
+          onSuccess={() => {
+            setEditingGroup(null)
+            fetchGroups()
+          }}
+        />
+      )}
     </div>
   )
 }

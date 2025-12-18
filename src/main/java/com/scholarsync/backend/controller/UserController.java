@@ -2,12 +2,14 @@ package com.scholarsync.backend.controller;
 
 import com.scholarsync.backend.dto.UserSearchDto;
 import com.scholarsync.backend.model.User;
+import com.scholarsync.backend.repository.StudentRepository;
 import com.scholarsync.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -20,16 +22,20 @@ import java.util.stream.Collectors;
 public class UserController {
 
     private final UserRepository userRepository;
+    private final StudentRepository studentRepository;
 
     /**
      * Search users by name or institutional ID
      * Used for adding members to groups
      * 
      * @param q Search query (searches display name and institutional ID)
+     * @param courseId Optional course ID to filter by enrollment. If provided, only returns users enrolled in that course.
      * @return List of matching users
      */
     @GetMapping("/search")
-    public ResponseEntity<List<UserSearchDto>> searchUsers(@RequestParam(required = false) String q) {
+    public ResponseEntity<List<UserSearchDto>> searchUsers(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long courseId) {
         List<User> users;
         
         if (q != null && !q.trim().isEmpty()) {
@@ -50,6 +56,23 @@ public class UserController {
         } else {
             // If no query, return empty list (don't return all users)
             users = List.of();
+        }
+        
+        // If courseId is provided, filter to only show users enrolled in that course
+        if (courseId != null) {
+            // Get all student IDs enrolled in this course
+            Set<String> enrolledStudentIds = studentRepository.findAllByCourseId(courseId)
+                .stream()
+                .map(com.scholarsync.backend.model.Student::getStudentId)
+                .collect(Collectors.toSet());
+            
+            // Filter users to only include those whose institutionalId matches enrolled students
+            users = users.stream()
+                .filter(user -> {
+                    String institutionalId = user.getInstitutionalId();
+                    return institutionalId != null && enrolledStudentIds.contains(institutionalId);
+                })
+                .collect(Collectors.toList());
         }
         
         // Convert to DTOs

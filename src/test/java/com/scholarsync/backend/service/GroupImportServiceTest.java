@@ -84,7 +84,7 @@ public class GroupImportServiceTest {
         Student s2 = new Student("M1", courseId, null, "L2", "F2", "b@b.c");
         studentRepository.saveAll(List.of(s1, s2));
 
-        var created = importService.createManualGroup("TEAM-M", "L1", courseId, List.of("L1", "M1"), "L1");
+        var created = importService.createManualGroup("TEAM-M", "L1", courseId, List.of("L1", "M1"), "L1", true);
         assertThat(created).isNotNull();
         assertThat(created.getGroupName()).isEqualTo("TEAM-M");
         Student leader = studentRepository.findByStudentIdAndCourseId("L1", courseId).get();
@@ -100,7 +100,7 @@ public class GroupImportServiceTest {
         Student s2 = new Student("M2", courseId, "existing-group", "L2", "F2", "b@b.c");
         studentRepository.saveAll(List.of(s1, s2));
 
-        var ex = org.assertj.core.api.Assertions.catchThrowable(() -> importService.createManualGroup("TEAM-N", "L2", courseId, List.of("L2", "M2"), "L2"));
+        var ex = org.assertj.core.api.Assertions.catchThrowable(() -> importService.createManualGroup("TEAM-N", "L2", courseId, List.of("L2", "M2"), "L2", false));
         assertThat(ex).isInstanceOf(com.scholarsync.backend.exception.ImportValidationException.class);
         var ive = (com.scholarsync.backend.exception.ImportValidationException) ex;
         assertThat(ive.getErrors()).anyMatch(s -> s.contains("already assigned"));
